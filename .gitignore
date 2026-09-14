@@ -30,8 +30,19 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
-.env*.local
+# Environment files.
+# `.env` holds per-developer Supabase URLs/keys and must never be committed.
+# `.env.example` IS committed and is the documented template.
+.env
+.env.*
+!.env.example
+
+# Supabase local stack
+supabase/.branches/
+supabase/.temp/
+
+# test output
+coverage/
 
 # typescript
 *.tsbuildinfo
@@ -39,3 +50,4 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+.claude/settings.local.json

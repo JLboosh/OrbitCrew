@@ -1,0 +1,8 @@
+{
+  "displayName": "gymcrew",
+  "tagline": "Train with your crew.",
+  "slug": "gymcrew",
+  "scheme": "gymcrew",
+  "iosBundleIdentifier": "com.gymcrew.app",
+  "androidPackage": "com.gymcrew.app"
+}

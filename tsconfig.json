@@ -1,6 +1,30 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": true
-  }
+    "strict": true,
+
+    // Catches a real class of bug: `array[0]` and `record[key]` are typed as
+    // possibly-undefined. Important for set/rep arrays and lookup maps where an
+    // out-of-range access would otherwise silently produce `undefined`.
+    "noUncheckedIndexedAccess": true,
+
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "verbatimModuleSyntax": false,
+
+    // Makes `describe`/`it`/`expect`/`jest` globals available to tsc. Without
+    // this, test files fail typecheck even though they run correctly.
+    "types": ["jest"],
+
+    // `@/` maps to `src/`. Keeps imports stable when files move.
+    // NOTE: `baseUrl` is intentionally omitted — it is deprecated in
+    // TypeScript 6 and removed in 7. Path mappings are resolved relative to
+    // this tsconfig.json instead.
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts", "app.config.ts"],
+  "exclude": ["node_modules", "dist", "coverage", "supabase/functions"]
 }

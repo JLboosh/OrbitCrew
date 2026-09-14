@@ -1,0 +1,115 @@
+import { Link } from 'expo-router';
+import { useState } from 'react';
+import { TextInput, View } from 'react-native';
+
+import { useAuth } from '@/auth/AuthProvider';
+import { Button, Card, Screen, Text } from '@/components/ui';
+import { BRANDING } from '@/constants/branding';
+import { useTheme } from '@/theme';
+
+export default function SignInScreen() {
+  const theme = useTheme();
+  const { signIn } = useAuth();
+
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const canSubmit = email.trim().length > 3 && password.length >= 6 && !submitting;
+
+  async function handleSubmit() {
+    setError(null);
+    setSubmitting(true);
+    try {
+      await signIn(email, password);
+      // Routing is handled centrally by the root layout once the session lands.
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not sign in.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const inputStyle = {
+    minHeight: theme.minTouchTarget,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: theme.spacing.md,
+    color: theme.colors.text,
+    backgroundColor: theme.colors.surface,
+    fontSize: 16,
+  };
+
+  return (
+    <Screen title={BRANDING.displayName} subtitle={BRANDING.tagline}>
+      <Card>
+        <Text variant="heading" heading>
+          Welcome back
+        </Text>
+
+        <View style={{ gap: theme.spacing.md, marginTop: theme.spacing.md }}>
+          <View style={{ gap: theme.spacing.xs }}>
+            <Text variant="caption" tone="muted">
+              Email
+            </Text>
+            <TextInput
+              value={email}
+              onChangeText={setEmail}
+              accessibilityLabel="Email address"
+              autoCapitalize="none"
+              autoComplete="email"
+              keyboardType="email-address"
+              inputMode="email"
+              placeholder="you@example.com"
+              placeholderTextColor={theme.colors.textSubtle}
+              style={inputStyle}
+            />
+          </View>
+
+          <View style={{ gap: theme.spacing.xs }}>
+            <Text variant="caption" tone="muted">
+              Password
+            </Text>
+            <TextInput
+              value={password}
+              onChangeText={setPassword}
+              accessibilityLabel="Password"
+              autoCapitalize="none"
+              autoComplete="current-password"
+              secureTextEntry
+              placeholder="At least 6 characters"
+              placeholderTextColor={theme.colors.textSubtle}
+              style={inputStyle}
+            />
+          </View>
+
+          {error ? (
+            <Text variant="caption" tone="danger" accessibilityLiveRegion="polite">
+              {error}
+            </Text>
+          ) : null}
+
+          <Button
+            label="Sign in"
+            size="large"
+            fullWidth
+            loading={submitting}
+            disabled={!canSubmit}
+            onPress={handleSubmit}
+          />
+        </View>
+      </Card>
+
+      <View style={{ alignItems: 'center', gap: theme.spacing.xs }}>
+        <Text variant="caption" tone="muted">
+          New here?
+        </Text>
+        <Link href="/(auth)/sign-up" asChild>
+          <Button label="Create an account" variant="ghost" />
+        </Link>
+      </View>
+    </Screen>
+  );
+}

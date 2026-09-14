@@ -69,4 +69,29 @@ export const queryKeys = {
   gymRatingSummary: (gymId: string) => ['gym', gymId, 'rating-summary'] as const,
 
   presence: () => ['presence'] as const,
+
+  // Gyms and map. The nearby key includes the rounded origin and radius so
+  // panning to a new area is a new cache entry rather than a silent overwrite.
+  nearbyGyms: (latitude: number, longitude: number, radiusMetres: number) =>
+    ['gyms', 'nearby', latitude.toFixed(3), longitude.toFixed(3), radiusMetres] as const,
+  gymSearch: (query: string) => ['gyms', 'search', query] as const,
+  gymPresence: (gymId: string) => ['gym', gymId, 'presence'] as const,
+  gymFriendVisits: (gymId: string) => ['gym', gymId, 'friend-visits'] as const,
+  gymMyVisits: (gymId: string) => ['gym', gymId, 'my-visits'] as const,
+
+  // Stats and progress.
+  exerciseProgress: () => ['progress', 'exercises'] as const,
+  weeklySummary: (weeks: number) => ['progress', 'weekly', weeks] as const,
+  trainingStreak: () => ['progress', 'streak'] as const,
+  personalRecords: () => ['progress', 'personal-records'] as const,
+
+  // Challenges.
+  challengeTemplates: () => ['challenges', 'templates'] as const,
+  myChallenges: () => ['challenges', 'mine'] as const,
+  joinableChallenges: () => ['challenges', 'joinable'] as const,
+  challenge: (challengeId: string) => ['challenges', challengeId] as const,
+  challengeParticipants: (challengeId: string) =>
+    ['challenges', challengeId, 'participants'] as const,
+  crewChallenges: (crewId: string) => ['crew', crewId, 'challenges'] as const,
+  myBadges: () => ['badges', 'mine'] as const,
 } as const;

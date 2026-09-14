@@ -7,29 +7,25 @@
  * as a type error in one place rather than in a dozen components.
  *
  * ---------------------------------------------------------------------------
- * LANE OWNERSHIP
+ * COVERAGE
  * ---------------------------------------------------------------------------
- * Modules present here cover the foundation, sessions/logging, social, and
- * ratings/leaderboard features.
+ * All seven product areas now have a data-access module:
  *
- * The following are NOT implemented here and belong to the gyms/map, stats, and
- * challenges lane. The database side is complete and verified, so building them
- * is a matter of wrapping existing RPCs:
+ *   profile.ts     Identity and privacy
+ *   sessions.ts    Sessions, logging, check-in/out
+ *   social.ts      Friends, crews, invites
+ *   ratings.ts     Gym lookup and seven-axis ratings
+ *   leaderboard.ts Weekly leaderboard and crew progress
+ *   gyms.ts        Nearby search, live presence, friend visits
+ *   progress.ts    PRs, estimated 1RM, volume, consistency, streaks
+ *   challenges.ts  Templates, instances, participation, scoring, badges
  *
- *   Nearby gyms / map    -> rpc('nearby_gyms', { p_latitude, p_longitude,
- *                                                p_radius_metres, p_limit })
- *                        -> rpc('gym_presence', { p_gym_id })
- *                        -> rpc('gym_friend_visits', { p_gym_id })
- *   Stats / progress     -> rpc('exercise_progress')
- *                        -> rpc('weekly_training_summary', { p_weeks })
- *                        -> rpc('training_streak')
- *                        -> table('personal_records')
- *   Challenges           -> table('challenge_templates'), table('challenges'),
- *                           table('challenge_participants')
- *                        -> rpc('rescore_challenge', { p_challenge_id })
- *
- * Add them as `src/api/gyms.ts`, `src/api/progress.ts`, and
- * `src/api/challenges.ts`, following the same patterns used here.
+ * One database capability is still missing rather than merely unwrapped:
+ * community crowd patterns ("usually busy Tue 5-7 PM"). It needs a new
+ * security-definer function aggregating check-ins from members who set
+ * `privacy_settings.contribute_to_crowd_stats`, because `sessions` is
+ * own-rows-only under RLS. `useMyGymVisitPattern` shows the member their OWN
+ * pattern in the meantime and must not be presented as a crowd forecast.
  */
 
 // Identity and privacy
@@ -123,3 +119,65 @@ export {
   type CrewProgress,
   type LeaderboardRow,
 } from './leaderboard';
+
+// Gyms, nearby search, live presence
+export {
+  useGymFriendVisits,
+  useGymPresence,
+  useGymSearch,
+  useMyGymVisitPattern,
+  useNearbyGyms,
+  type GymFriendVisits,
+  type GymPresenceMember,
+  type GymRow,
+  type MyGymVisitPattern,
+  type NamedVisitor,
+  type NearbyGym,
+} from './gyms';
+
+// Stats and progress
+export {
+  averageSessionDuration,
+  averageSessionsPerWeek,
+  compareTrainingBlocks,
+  toWeekBuckets,
+  useExerciseProgress,
+  usePersonalRecords,
+  useTrainingStreak,
+  useWeeklyTrainingSummary,
+  type ExerciseProgressRow,
+  type PersonalRecordRow,
+  type PersonalRecordWithExercise,
+  type RecordType,
+  type TrainingBlockComparison,
+  type TrainingStreak,
+  type WeekBucket,
+  type WeeklySummaryRow,
+} from './progress';
+
+// Challenges
+export {
+  combinedProgress,
+  useChallenge,
+  useChallengeParticipants,
+  useChallengeTemplates,
+  useCreateChallenge,
+  useCrewChallenges,
+  useDeleteChallenge,
+  useJoinChallenge,
+  useLeaveChallenge,
+  useMyBadges,
+  useMyChallenges,
+  useRescoreChallenge,
+  useVisibleCrewChallenges,
+  type Challenge,
+  type ChallengeParticipant,
+  type ChallengeParticipantRow,
+  type ChallengeScope,
+  type ChallengeTemplate,
+  type ChallengeVisibility,
+  type ChallengeWithTemplate,
+  type CreateChallengeInput,
+  type EarnedBadge,
+  type MyChallenge,
+} from './challenges';

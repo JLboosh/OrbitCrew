@@ -1,71 +1,307 @@
-import { Card, Screen, Text } from '@/components/ui';
+import { useRouter } from 'expo-router';
+import { useState } from 'react';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+
+import { useGymSearch, useMyProfile, useNearbyGyms, type NearbyGym } from '@/api';
+import { GymListRow, GymMapView, SelectedGymCard } from '@/components/gyms';
+import { Button, Card, Screen, Text } from '@/components/ui';
+import { useDeviceLocation } from '@/lib/deviceLocation';
+import {
+  distanceSystemForWeightUnit,
+  formatRadius,
+  RADIUS_CHOICES,
+  type DistanceSystem,
+} from '@/lib/geo';
+import { useTheme } from '@/theme';
 
 /**
- * ==========================================================================
- * PLACEHOLDER — OWNED BY THE GYMS/MAP LANE
- * ==========================================================================
- * Not implemented by the foundation work. Everything the database side needs is
- * already built, applied, and verified against the real project.
+ * Map — discover gyms and the social activity around them.
  *
- * WHAT TO BUILD
- *   * Map with nearby gym pins
- *   * Gym pin callout: name, distance, rating summary, friend visits, live presence
- *   * Navigation to the gym detail screen at /gym/[id]
+ * THREE SEPARATE CONCEPTS, kept separate on purpose:
+ *   1. Nearby gyms       — places, from our PostGIS-indexed OpenStreetMap cache.
+ *   2. Friend history    — "4 people you know have trained here."
+ *   3. Live presence     — "Alex is checked in right now."
+ * Only the first is available without any social graph, and the last is off by
+ * default for everyone. Conflating them would leak the third through the second.
  *
- * FREE STACK (no paid API keys anywhere)
- *   * @maplibre/maplibre-react-native for the map view
- *   * OpenFreeMap for vector tiles: https://tiles.openfreemap.org/styles/liberty
- *     No API key, no registration, no request limits.
- *   * NOTE: MapLibre is a native module, so Expo Go will NOT work. A development
- *     build is required (npx expo prebuild, then run on a simulator/device).
- *   * Attribution is REQUIRED: "© OpenStreetMap contributors" must be visible.
+ * PRIVACY PROPERTIES OF THIS SCREEN
+ *   * The member's coordinate is used as a query argument and held in component
+ *     state. It is never written anywhere, and nothing here persists it.
+ *   * No marker is ever drawn at a USER's position — only at gyms. The schema has
+ *     no column for a person's coordinates.
+ *   * There is no heat map, no breadcrumb trail, and no movement history.
  *
- * READY-MADE DATABASE CONTRACT
- *   supabase.rpc('nearby_gyms', {
- *     p_latitude, p_longitude, p_radius_metres, p_limit
- *   })
- *     -> { id, name, latitude, longitude, address, opening_hours, distance_metres }
- *     Ordered nearest first. Radius is metres on the WGS84 spheroid. The limit is
- *     clamped server-side to 200.
- *
- *   supabase.rpc('gym_presence', { p_gym_id })
- *     -> members currently checked in WHO HAVE OPTED IN and whom the caller is
- *        permitted to see. Already filtered; render whatever it returns.
- *
- *   supabase.rpc('gym_friend_visits', { p_gym_id })
- *     -> { visitor_count, named_visitors }
- *        `visitor_count` includes everyone; `named_visitors` contains only those
- *        who share gym-level detail. Show the count and name only the named ones.
- *
- * IMPORTANT: gyms are cached in our own table on purpose. Do NOT call Overpass
- * from the app — its usage policy is ~10k requests/day for the WHOLE app, and
- * per-pan queries would get us blocked. Import in bulk with
- * `npm run gyms:import -- waterloo` instead.
- *
- * PRIVACY RULES THAT MUST HOLD IN THE UI
- *   * Never render a marker at a USER's position. Presence is gym-level only;
- *     the database stores no user coordinates at all.
- *   * Do not add a heat map, breadcrumb trail, or any movement history.
- *   * Use the caller's location transiently for the nearby query; never persist it.
- *
- * Add hooks as src/api/gyms.ts, following the patterns in src/api/ratings.ts.
+ * The map itself is a schematic plot rather than a tile map; see the comment in
+ * GymMapView for why, and for how to swap MapLibre in behind the same props.
  */
 export default function MapScreen() {
+  const theme = useTheme();
+  const router = useRouter();
+
+  const { data: profile } = useMyProfile();
+  const location = useDeviceLocation();
+
+  const [radiusMetres, setRadiusMetres] = useState<number>(5000);
+  const [selectedGymId, setSelectedGymId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const distanceSystem = distanceSystemForWeightUnit(profile?.weight_unit ?? 'lb');
+
+  const nearby = useNearbyGyms(location.coords, radiusMetres, 50);
+  const search = useGymSearch(searchQuery);
+
+  const gyms = nearby.data ?? [];
+  const selectedGym = gyms.find((gym) => gym.id === selectedGymId) ?? null;
+
+  const openGym = (gymId: string) => router.push(`/gym/${gymId}`);
+  const onSelectGym = (gym: NearbyGym) => setSelectedGymId(gym.id);
+
   return (
     <Screen title="Map" subtitle="Find gyms near you.">
+      {/* Location gate. Asked for on tap rather than on mount: a permission
+          prompt the member did not initiate feels like the app taking something. */}
+      {location.coords === null ? (
+        <Card>
+          <Text variant="subheading">Find gyms around you</Text>
+          <Text variant="caption" tone="muted">
+            Your location is used once, to ask which gyms are nearby. It is not saved, not shared,
+            and never tracked in the background.
+          </Text>
+          {location.supported ? (
+            <Button
+              label="Use my location"
+              loading={location.status === 'requesting'}
+              onPress={location.request}
+            />
+          ) : null}
+          {location.message ? (
+            <Text variant="caption" tone="subtle">
+              {location.message}
+            </Text>
+          ) : null}
+          {!location.supported ? (
+            <Text variant="caption" tone="subtle">
+              This build cannot read device location yet, so nearby search is unavailable. You can
+              still find a gym by name below.
+            </Text>
+          ) : null}
+        </Card>
+      ) : null}
+
+      {/* Nearby results. */}
+      {location.coords ? (
+        <>
+          <RadiusPicker
+            value={radiusMetres}
+            onChange={(next) => {
+              setRadiusMetres(next);
+              // The selection may fall outside the new radius.
+              setSelectedGymId(null);
+            }}
+            distanceSystem={distanceSystem}
+          />
+
+          {nearby.isLoading ? (
+            <Card>
+              <Text variant="caption" tone="muted">
+                Looking for gyms nearby…
+              </Text>
+            </Card>
+          ) : nearby.isError ? (
+            <Card>
+              <Text variant="caption" tone="danger">
+                Could not load nearby gyms.
+              </Text>
+              <Button label="Try again" variant="secondary" onPress={() => nearby.refetch()} />
+            </Card>
+          ) : gyms.length === 0 ? (
+            <Card>
+              <Text variant="subheading">
+                No gyms within {formatRadius(radiusMetres, distanceSystem)}
+              </Text>
+              <Text variant="caption" tone="muted">
+                Try a wider radius, or search by name below.
+              </Text>
+            </Card>
+          ) : (
+            <>
+              <GymMapView
+                origin={location.coords}
+                gyms={gyms}
+                radiusMetres={radiusMetres}
+                selectedGymId={selectedGymId}
+                onSelectGym={onSelectGym}
+                distanceSystem={distanceSystem}
+              />
+
+              {selectedGym ? (
+                <SelectedGymCard
+                  gym={selectedGym}
+                  distanceSystem={distanceSystem}
+                  onOpenDetail={openGym}
+                />
+              ) : (
+                <Text variant="caption" tone="subtle">
+                  Tap a pin or a gym below for ratings, who has trained there, and check-in.
+                </Text>
+              )}
+
+              <Card flush style={{ paddingHorizontal: theme.spacing.lg }}>
+                {gyms.map((gym, index) => (
+                  <GymListRow
+                    key={gym.id}
+                    gym={gym}
+                    label={index + 1}
+                    selected={gym.id === selectedGymId}
+                    distanceSystem={distanceSystem}
+                    onPress={onSelectGym}
+                  />
+                ))}
+              </Card>
+            </>
+          )}
+        </>
+      ) : null}
+
+      {/* Search by name. Always available, and the only path when location is not. */}
       <Card>
-        <Text variant="subheading">Not built yet</Text>
-        <Text variant="caption" tone="muted">
-          This screen belongs to the gyms and map workstream. The database side is ready: 26 gyms
-          are already imported, and nearby search, gym presence, and friend-visit counts all work.
+        <Text variant="subheading" heading>
+          Search by name or city
         </Text>
+        <TextInput
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder="Gym or city name"
+          placeholderTextColor={theme.colors.textSubtle}
+          autoCapitalize="words"
+          autoCorrect={false}
+          accessibilityLabel="Search gyms by name or city"
+          style={[
+            styles.input,
+            {
+              minHeight: theme.minTouchTarget,
+              paddingHorizontal: theme.spacing.md,
+              borderRadius: theme.radius.md,
+              borderColor: theme.colors.border,
+              backgroundColor: theme.colors.surfaceMuted,
+              color: theme.colors.text,
+            },
+          ]}
+        />
+
+        {searchQuery.trim().length >= 2 ? (
+          search.isLoading ? (
+            <Text variant="caption" tone="muted">
+              Searching…
+            </Text>
+          ) : search.data && search.data.length > 0 ? (
+            <View>
+              {search.data.map((gym) => (
+                <Pressable
+                  key={gym.id}
+                  onPress={() => openGym(gym.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel={gym.name}
+                  style={({ pressed }) => [
+                    styles.searchRow,
+                    {
+                      minHeight: theme.minTouchTarget,
+                      borderBottomColor: theme.colors.border,
+                      opacity: pressed ? 0.7 : 1,
+                    },
+                  ]}
+                >
+                  <Text variant="body" numberOfLines={1}>
+                    {gym.name}
+                  </Text>
+                  {gym.address || gym.city ? (
+                    <Text variant="caption" tone="muted" numberOfLines={1}>
+                      {gym.address ?? gym.city}
+                    </Text>
+                  ) : null}
+                </Pressable>
+              ))}
+              {/* Search cannot show distance: gyms.location is PostGIS geography,
+                  which PostgREST serialises as opaque WKB. Only nearby_gyms
+                  projects it to latitude/longitude. */}
+              <Text variant="caption" tone="subtle">
+                Distances are shown for nearby results only.
+              </Text>
+            </View>
+          ) : (
+            <Text variant="caption" tone="muted">
+              No gyms matched. The directory is imported per area, so somewhere new may not be in it
+              yet.
+            </Text>
+          )
+        ) : null}
       </Card>
-      <Card>
-        <Text variant="caption" tone="subtle">
-          See the comment block at the top of app/(tabs)/map.tsx for the full contract, the free
-          tile source, and the privacy rules that apply here.
-        </Text>
-      </Card>
+
+      {/* Licence condition, not decoration. */}
+      <Text variant="caption" tone="subtle">
+        Gym data © OpenStreetMap contributors
+      </Text>
     </Screen>
   );
 }
+
+function RadiusPicker({
+  value,
+  onChange,
+  distanceSystem,
+}: {
+  value: number;
+  onChange: (metres: number) => void;
+  distanceSystem: DistanceSystem;
+}) {
+  const theme = useTheme();
+
+  return (
+    <View
+      accessibilityRole="radiogroup"
+      accessibilityLabel="Search radius"
+      style={[styles.radiusRow, { gap: theme.spacing.sm }]}
+    >
+      {RADIUS_CHOICES.map((choice) => {
+        const active = choice === value;
+        return (
+          <Pressable
+            key={choice}
+            onPress={() => onChange(choice)}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: active }}
+            accessibilityLabel={`Within ${formatRadius(choice, distanceSystem)}`}
+            style={{
+              paddingVertical: theme.spacing.sm,
+              paddingHorizontal: theme.spacing.md,
+              borderRadius: theme.radius.pill,
+              borderWidth: 1,
+              borderColor: active ? theme.colors.primary : theme.colors.border,
+              backgroundColor: active ? theme.colors.primarySoft : 'transparent',
+            }}
+          >
+            <Text variant="caption" tone={active ? 'primary' : 'muted'}>
+              {formatRadius(choice, distanceSystem)}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  input: {
+    borderWidth: 1,
+    fontSize: 15,
+  },
+  searchRow: {
+    justifyContent: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 8,
+  },
+  radiusRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+});

@@ -69,6 +69,12 @@ function RootNavigator() {
         }}
       />
       <Stack.Screen name="gym/[id]" options={{ headerShown: true, title: 'Gym' }} />
+      <Stack.Screen name="challenges/index" options={{ headerShown: true, title: 'Challenges' }} />
+      <Stack.Screen
+        name="challenges/new"
+        options={{ headerShown: true, title: 'New challenge', presentation: 'modal' }}
+      />
+      <Stack.Screen name="challenges/[id]" options={{ headerShown: true, title: 'Challenge' }} />
     </Stack>
   );
 }

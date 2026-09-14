@@ -6,21 +6,38 @@ parallel without colliding.
 
 ## Who owns what
 
-| Area                             | Owner      | Status                                                     |
-| -------------------------------- | ---------- | ---------------------------------------------------------- |
-| Auth, profiles, privacy          | Foundation | **Done** — screen built                                    |
-| Database schema, RLS, migrations | Foundation | **Done** — 16 migrations applied                           |
-| Navigation shell, design system  | Foundation | **Done**                                                   |
-| Typed data-access layer          | Foundation | **Done** for the areas below                               |
-| Sessions + logging               | Lane A     | **Done** — Today + Active Session screens                  |
-| Social (friends, crews, invites) | Lane A     | **Done** — Crew screen                                     |
-| Ratings + leaderboard            | Lane A     | **Done** — data layer + leaderboard UI                     |
-| Gyms + map, gym detail           | Lane B     | **Placeholder** — `app/(tabs)/map.tsx`, `app/gym/[id].tsx` |
-| Stats (PRs, volume, consistency) | Lane B     | **Placeholder** — `app/(tabs)/progress.tsx`                |
-| Challenges                       | Lane B     | Schema + engine done; **no UI**                            |
+| Area                             | Owner      | Status                                                                |
+| -------------------------------- | ---------- | --------------------------------------------------------------------- |
+| Auth, profiles, privacy          | Foundation | **Done** — screen built                                               |
+| Database schema, RLS, migrations | Foundation | **Done** — 16 migrations applied                                      |
+| Navigation shell, design system  | Foundation | **Done**                                                              |
+| Typed data-access layer          | Foundation | **Done** for the areas below                                          |
+| Sessions + logging               | Lane A     | **Done** — Today + Active Session screens                             |
+| Social (friends, crews, invites) | Lane A     | **Done** — Crew screen                                                |
+| Ratings + leaderboard            | Lane A     | **Done** — data layer + leaderboard UI                                |
+| Gyms + map, gym detail           | Lane B     | **Done** — `src/api/gyms.ts`, Map + Gym detail screens                |
+| Stats (PRs, volume, consistency) | Lane B     | **Done** — `src/api/progress.ts`, Progress screen                     |
+| Challenges                       | Lane B     | **Done** — `src/api/challenges.ts`, 3 screens under `app/challenges/` |
 
-Every placeholder file opens with a comment block listing the exact RPCs and
-tables to call, plus the product rules that apply. Start there.
+### Lane B notes
+
+Two decisions worth knowing before you review it:
+
+- **The map is a schematic plot, not a tile map.** Distances and bearings are
+  accurate and to scale; streets are not drawn, and the UI says so. MapLibre +
+  OpenFreeMap is still the intended stack, and `GymMapViewProps` is the seam —
+  see the comment block in `src/components/gyms/GymMapView.tsx`. It was not
+  adopted yet because MapLibre is a native module (no Expo Go) and adding any
+  dependency without regenerating `package-lock.json` breaks `npm ci` in CI.
+- **No new dependencies were added**, including `expo-location`. Nearby search
+  therefore uses `navigator.geolocation` where the platform provides it and falls
+  back to search-by-name otherwise. `src/lib/deviceLocation.ts` documents the
+  three-step swap to `expo-location`; the hook's shape is the contract, so no
+  caller changes.
+
+Challenges have no entry point on Today or Crew, because those screens are Lane
+A's. `<ActiveChallenges onSeeAll={...} />` is a self-contained card built for
+exactly that insertion — one line, no prop plumbing.
 
 ## Getting started
 
@@ -87,9 +104,15 @@ All database access goes through `src/api/`. Screens should not import
 | `social.ts`      | Friends, blocks, crews, invites, membership |
 | `ratings.ts`     | Gym lookup, seven-axis ratings, reports     |
 | `leaderboard.ts` | Weekly leaderboard, crew progress, badges   |
+| `gyms.ts`        | Nearby search, live presence, friend visits |
+| `progress.ts`    | PRs, 1RM, volume, consistency, streaks      |
+| `challenges.ts`  | Templates, instances, participation, badges |
 
-Still to write, following the same patterns: `gyms.ts`, `progress.ts`,
-`challenges.ts`.
+All eight modules exist. Shared pure helpers live in `src/lib/`: `units.ts`
+(kg/lb display), `geo.ts` (distance + map projection), `openingHours.ts` (an
+OSM `opening_hours` reader that reports when it cannot parse), `challengeRules.ts`
+(rule descriptions), `errors.ts` (extracting member-facing messages from
+`PostgrestError`, which is not an `Error` instance).
 
 ## Database contract for Lane B
 
@@ -181,8 +204,19 @@ Not bugs, but things nobody has built yet:
 
 - **Realtime is not wired up.** The tables are ready; crew activity and presence
   currently need a refetch.
-- **Crowd patterns** ("usually busy Tue 5–7 PM") are unimplemented. Derive them
-  from opted-in check-ins only (`contribute_to_crowd_stats`).
+- **Community crowd patterns** ("usually busy Tue 5–7 PM") are still
+  unimplemented, and this is the one gap in Lane B's product surface. They need a
+  new `SECURITY DEFINER` function aggregating session start times for members who
+  set `contribute_to_crowd_stats`, because `sessions` is own-rows-only under RLS
+  and correctly so. It was not added because a migration also requires
+  regenerating `src/types/database.types.ts`, which needs the Supabase CLI.
+  Gym detail currently shows the member their OWN visit pattern
+  (`useMyGymVisitPattern`) and explicitly labels it as not being a crowd forecast.
+- **`challenge_participants_insert_self` is looser than it looks.** It checks only
+  `user_id = auth.uid()`, not that the challenge is one the caller can see, so
+  someone who learned a challenge UUID could enrol in it. Low impact — they still
+  cannot read the challenge — but the policy should also require
+  `caller_in_crew(challenge.crew_id)` or ownership. Noted in `src/api/challenges.ts`.
 - **`purge_expired_presence()` is not scheduled.** RLS already hides expired
   rows, so this is hygiene, but it should run on a schedule (pg_cron) so no
   location history lingers.

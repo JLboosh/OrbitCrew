@@ -1,134 +1,163 @@
 /**
  * Colour tokens.
  *
- * Two deliberate constraints:
+ * Palette follows the reference design: a warm off-white sage canvas, white
+ * cards, deep forest green as the single primary, and a warm coral used sparingly
+ * for "live" and time-based accents.
  *
- * 1. ENCOURAGING, NOT ALARMING. There is no "bad" red for missed sessions or
- *    low rankings. Red is reserved strictly for destructive actions and genuine
- *    errors. Falling behind a goal is shown in a neutral or warm tone, never as
- *    a failure state.
+ * Two constraints carried over from the product rules:
  *
- * 2. ACCESSIBLE CONTRAST. Every foreground/background pairing below meets WCAG
- *    AA (4.5:1 for body text, 3:1 for large text and UI boundaries).
+ * 1. ENCOURAGING, NOT ALARMING. There is no "bad" red for a missed session or a
+ *    low ranking. Red exists only for destructive actions and genuine errors.
+ *    Being behind on a goal renders as an unfilled neutral track.
+ *
+ * 2. ACCESSIBLE CONTRAST. Foreground/background pairings meet WCAG AA (4.5:1 for
+ *    body text, 3:1 for large text and UI boundaries). The deep green on white is
+ *    ~8:1; white on deep green is ~8:1.
  */
 
 const palette = {
-  // Brand: a calm, energetic teal. Distinct from the red/orange "hustle"
-  // palette most fitness apps use, which reads as pressure rather than support.
-  teal900: '#0B3B3C',
-  teal700: '#11605F',
-  teal500: '#178F8B',
-  teal300: '#5EC4BE',
-  teal100: '#D3F0EE',
+  // Deep forest green: buttons, progress fills, active states.
+  green900: '#12321F',
+  green800: '#1D4630',
+  green700: '#2A5F41',
+  green600: '#2E6042',
+  green500: '#3C7A55',
+  green300: '#8FBCA1',
+  green200: '#C7DDCF',
+  green100: '#E4EFE5',
+  green50: '#EFF4EE',
 
-  // Warm accent for streaks and celebrations.
-  amber600: '#B45309',
-  amber500: '#D97706',
-  amber100: '#FEF3C7',
+  // Warm coral: "live" dots, early-morning and exploration accents. Never used
+  // to signal failure.
+  coral600: '#C9531F',
+  coral500: '#E2622F',
+  coral100: '#FBE8DF',
 
-  // Neutrals.
-  gray900: '#11181C',
-  gray800: '#1F2933',
-  gray700: '#374151',
-  gray600: '#4B5563',
-  gray500: '#6B7280',
-  gray400: '#9CA3AF',
-  gray300: '#D1D5DB',
-  gray200: '#E5E7EB',
-  gray100: '#F3F4F6',
-  gray50: '#F9FAFB',
+  // Supporting hue for avatars only, so identity colours are distinguishable
+  // without implying status.
+  blue500: '#3B6FD4',
+
+  // Warm-tinted neutrals. Pure grey would read cold against the sage canvas.
+  ink900: '#151A16',
+  ink800: '#1F2620',
+  ink700: '#3A453D',
+  ink600: '#55635A',
+  ink500: '#6B7A6F',
+  ink400: '#93A197',
+  ink300: '#BFC9C2',
+  ink200: '#DCE3DD',
+  ink100: '#ECF0EB',
+  canvas: '#F1F4F0',
   white: '#FFFFFF',
-  black: '#000000',
 
-  // Reserved for destructive actions and real errors ONLY.
-  red600: '#DC2626',
-  red100: '#FEE2E2',
-
-  // Success / goal reached.
-  green600: '#059669',
-  green100: '#D1FAE5',
+  red600: '#C0392B',
+  red100: '#FBE4E1',
+  amber500: '#D97706',
 } as const;
 
 export interface ColorScheme {
-  /** Screen background. */
+  /** App canvas — deliberately not pure white, so white cards read as raised. */
   background: string;
-  /** Raised surface (cards, sheets). */
+  /** Card and sheet surfaces. */
   surface: string;
-  /** Subtle surface for secondary grouping. */
+  /** Secondary grouping surface. */
   surfaceMuted: string;
-  /** Primary body text. */
+  /** Tinted surface for the crew/goal feature card. */
+  surfaceAccent: string;
+  /** Two stops for the feature card's soft gradient. */
+  gradientStart: string;
+  gradientEnd: string;
+
   text: string;
-  /** Secondary/supporting text. */
   textMuted: string;
-  /** Lowest-emphasis text (timestamps, hints). */
   textSubtle: string;
-  /** Text on a primary-coloured background. */
   textOnPrimary: string;
-  /** Primary interactive colour. */
+
   primary: string;
-  /** Pressed/active state for primary. */
   primaryPressed: string;
-  /** Tint for primary-coloured fills. */
   primarySoft: string;
-  /** Streaks, celebrations, milestones. */
+
+  /** "Live" and time-of-day accents. Not a warning colour. */
   accent: string;
   accentSoft: string;
-  /** Goal met / positive confirmation. */
+
   success: string;
   successSoft: string;
-  /** Destructive actions and errors only. */
   danger: string;
   dangerSoft: string;
-  /** Hairline borders and dividers. */
+
   border: string;
-  /** Stronger border for focus rings. */
   borderStrong: string;
   /** Unfilled portion of progress bars. */
   track: string;
+
+  /** Avatar background rotation, keyed by a stable hash of the user id. */
+  avatarPalette: readonly string[];
 }
 
 export const lightColors: ColorScheme = {
-  background: palette.white,
+  background: palette.canvas,
   surface: palette.white,
-  surfaceMuted: palette.gray50,
-  text: palette.gray900,
-  textMuted: palette.gray600,
-  textSubtle: palette.gray500,
+  surfaceMuted: palette.green50,
+  surfaceAccent: palette.green100,
+  gradientStart: '#E9F1E8',
+  gradientEnd: '#D7E6D8',
+
+  text: palette.ink900,
+  textMuted: palette.ink500,
+  textSubtle: palette.ink400,
   textOnPrimary: palette.white,
-  primary: palette.teal500,
-  primaryPressed: palette.teal700,
-  primarySoft: palette.teal100,
-  accent: palette.amber600,
-  accentSoft: palette.amber100,
+
+  primary: palette.green600,
+  primaryPressed: palette.green800,
+  primarySoft: palette.green100,
+
+  accent: palette.coral500,
+  accentSoft: palette.coral100,
+
   success: palette.green600,
   successSoft: palette.green100,
   danger: palette.red600,
   dangerSoft: palette.red100,
-  border: palette.gray200,
-  borderStrong: palette.gray400,
-  track: palette.gray200,
+
+  border: palette.ink200,
+  borderStrong: palette.ink300,
+  track: palette.ink200,
+
+  avatarPalette: [palette.blue500, palette.coral500, palette.green600, palette.ink900],
 };
 
 export const darkColors: ColorScheme = {
-  background: palette.gray900,
-  surface: palette.gray800,
-  surfaceMuted: '#18212B',
-  text: palette.gray50,
-  textMuted: palette.gray300,
-  textSubtle: palette.gray400,
-  textOnPrimary: palette.gray900,
-  primary: palette.teal300,
-  primaryPressed: palette.teal100,
-  primarySoft: palette.teal900,
-  accent: '#FBBF24',
-  accentSoft: '#3B2A08',
-  success: '#34D399',
-  successSoft: '#052E22',
-  danger: '#F87171',
-  dangerSoft: '#3B0D0D',
-  border: palette.gray700,
-  borderStrong: palette.gray500,
-  track: palette.gray700,
+  background: '#0F1511',
+  surface: '#18201A',
+  surfaceMuted: '#131A15',
+  surfaceAccent: '#1B2A20',
+  gradientStart: '#1B2A20',
+  gradientEnd: '#14201A',
+
+  text: '#EEF3EE',
+  textMuted: palette.ink300,
+  textSubtle: palette.ink400,
+  textOnPrimary: palette.green900,
+
+  primary: palette.green300,
+  primaryPressed: palette.green200,
+  primarySoft: '#1E2E23',
+
+  accent: '#F08A57',
+  accentSoft: '#33190E',
+
+  success: palette.green300,
+  successSoft: '#16281C',
+  danger: '#EF8377',
+  dangerSoft: '#331512',
+
+  border: '#2A352D',
+  borderStrong: '#3D4B41',
+  track: '#2A352D',
+
+  avatarPalette: ['#5B8AE6', '#F08A57', palette.green300, '#E8EFE7'],
 };
 
 export { palette };

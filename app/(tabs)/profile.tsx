@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, View } from 'react-native';
+import { View } from 'react-native';
 
 import {
   useMyPrivacySettings,
@@ -9,7 +9,7 @@ import {
   type PresenceVisibility,
 } from '@/api';
 import { useAuth } from '@/auth/AuthProvider';
-import { Button, Card, Screen, SettingSwitch, Text } from '@/components/ui';
+import { Button, Card, Screen, SettingSwitch, Text, useConfirm } from '@/components/ui';
 import { useTheme } from '@/theme';
 
 /**
@@ -26,6 +26,7 @@ import { useTheme } from '@/theme';
 export default function ProfileScreen() {
   const theme = useTheme();
   const { signOut } = useAuth();
+  const confirm = useConfirm();
 
   const { data: profile } = useMyProfile();
   const { data: privacy, isLoading } = useMyPrivacySettings();
@@ -196,11 +197,14 @@ export default function ProfileScreen() {
         label="Sign out"
         variant="ghost"
         fullWidth
-        onPress={() => {
-          Alert.alert('Sign out', 'You can sign back in at any time.', [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Sign out', style: 'destructive', onPress: () => void signOut() },
-          ]);
+        onPress={async () => {
+          const confirmed = await confirm({
+            title: 'Sign out?',
+            message: 'You can sign back in at any time.',
+            confirmLabel: 'Sign out',
+            destructive: true,
+          });
+          if (confirmed) await signOut();
         }}
       />
     </Screen>

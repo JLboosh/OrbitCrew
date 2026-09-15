@@ -3,6 +3,7 @@ import { render } from '@testing-library/react-native';
 import type { ReactElement, ReactNode } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { ConfirmProvider } from '@/components/ui';
 import { ThemeProvider } from '@/theme';
 
 /**
@@ -48,7 +49,10 @@ export function renderWithProviders(ui: ReactElement, options: RenderWithProvide
     return (
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
-          <SafeAreaProvider initialMetrics={TEST_SAFE_AREA_METRICS}>{children}</SafeAreaProvider>
+          <SafeAreaProvider initialMetrics={TEST_SAFE_AREA_METRICS}>
+            {/* Mirrors the app's provider tree so screens using useConfirm work. */}
+            <ConfirmProvider>{children}</ConfirmProvider>
+          </SafeAreaProvider>
         </ThemeProvider>
       </QueryClientProvider>
     );

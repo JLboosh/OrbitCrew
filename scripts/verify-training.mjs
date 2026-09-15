@@ -58,6 +58,46 @@ async function logSession(client, userId, { gymId, exerciseId, sets, startedAt, 
 const hoursAgo = (h) => new Date(Date.now() - h * 3600_000).toISOString();
 const daysAgo = (d) => new Date(Date.now() - d * 86400_000).toISOString();
 
+/**
+ * Monday 00:00 local time for the current week.
+ *
+ * Assumes the machine timezone matches the crew timezone used in these tests
+ * (America/Toronto), which is true for local development.
+ */
+function weekStartMs() {
+  const d = new Date();
+  const dayFromMonday = (d.getDay() + 6) % 7;
+  d.setDate(d.getDate() - dayFromMonday);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+/**
+ * A session window guaranteed to fall inside the CURRENT week and entirely in
+ * the past.
+ *
+ * Relative offsets like "30 hours ago" are not safe here: run on a Monday they
+ * land in the previous week, so a leaderboard assertion fails even though the
+ * Monday-anchored reset is behaving correctly. `fraction` positions the session
+ * through the elapsed part of this week.
+ */
+function sessionThisWeek(fraction, minutes) {
+  const start = weekStartMs();
+  const now = Date.now();
+  const durationMs = minutes * 60_000;
+
+  // Latest start that still finishes by now.
+  const latestStart = now - durationMs;
+  const desired = start + (now - start) * fraction;
+  const chosen = Math.min(Math.max(desired, start + 60_000), latestStart);
+
+  return {
+    startedAt: new Date(chosen),
+    endedAt: new Date(chosen + durationMs),
+    minutes,
+  };
+}
+
 await harness.run(async ({ admin, createUser, check, section }) => {
   const alex = await createUser('tralex', { timezone: 'America/Toronto' });
   const sam = await createUser('trsam', { timezone: 'America/Toronto' });
@@ -110,11 +150,12 @@ await harness.run(async ({ admin, createUser, check, section }) => {
   // -------------------------------------------------------------------------
   section('2. Sessions, generated duration, and unit normalisation');
 
+  const alexFirst = sessionThisWeek(0.2, 60);
   const session = await logSession(alex.client, alex.id, {
     gymId: gyms[0].id,
     exerciseId: bench.id,
-    startedAt: hoursAgo(2),
-    endedAt: hoursAgo(1),
+    startedAt: alexFirst.startedAt.toISOString(),
+    endedAt: alexFirst.endedAt.toISOString(),
     // 135 lb x 5 -> Epley 1RM = 61.235 x (1 + 5/30) = 71.44 kg
     sets: [
       { weight: 45, weight_unit: 'lb', reps: 10, is_warmup: true },
@@ -212,11 +253,12 @@ await harness.run(async ({ admin, createUser, check, section }) => {
   );
 
   // Beat the record: 185 lb x 5 -> 83.9 kg estimated 1RM.
+  const alexSecond = sessionThisWeek(0.45, 60);
   await logSession(alex.client, alex.id, {
     gymId: gyms[0].id,
     exerciseId: bench.id,
-    startedAt: hoursAgo(1.5),
-    endedAt: hoursAgo(0.5),
+    startedAt: alexSecond.startedAt.toISOString(),
+    endedAt: alexSecond.endedAt.toISOString(),
     sets: [{ weight: 185, weight_unit: 'lb', reps: 5 }],
   });
 
@@ -380,8 +422,16 @@ await harness.run(async ({ admin, createUser, check, section }) => {
   section('8. Weekly leaderboard');
 
   // Sam logs two qualifying sessions; Alex already has two.
-  await logSession(sam.client, sam.id, { startedAt: hoursAgo(30), endedAt: hoursAgo(29) });
-  await logSession(sam.client, sam.id, { startedAt: hoursAgo(6), endedAt: hoursAgo(5) });
+  const samFirst = sessionThisWeek(0.6, 40);
+  const samSecond = sessionThisWeek(0.8, 40);
+  await logSession(sam.client, sam.id, {
+    startedAt: samFirst.startedAt.toISOString(),
+    endedAt: samFirst.endedAt.toISOString(),
+  });
+  await logSession(sam.client, sam.id, {
+    startedAt: samSecond.startedAt.toISOString(),
+    endedAt: samSecond.endedAt.toISOString(),
+  });
 
   const { data: board, error: boardErr } = await alex.client.rpc('crew_weekly_leaderboard', {
     p_crew_id: crew.id,
@@ -426,9 +476,10 @@ await harness.run(async ({ admin, createUser, check, section }) => {
   section('9. Short sessions do not count');
 
   // 10 minutes, below the crew's 20-minute default.
+  const samShort = sessionThisWeek(0.5, 10);
   await logSession(sam.client, sam.id, {
-    startedAt: hoursAgo(3),
-    endedAt: new Date(Date.now() - 3 * 3600_000 + 600_000).toISOString(),
+    startedAt: samShort.startedAt.toISOString(),
+    endedAt: samShort.endedAt.toISOString(),
   });
 
   const { data: boardAfterShort } = await alex.client.rpc('crew_weekly_leaderboard', {

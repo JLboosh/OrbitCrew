@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, TextInput, View } from 'react-native';
+import { TextInput, View } from 'react-native';
 
 import {
   useActiveSession,
@@ -14,7 +14,7 @@ import {
   useRemoveSessionExercise,
   type SessionDetail,
 } from '@/api';
-import { Button, Card, Screen, Text } from '@/components/ui';
+import { Button, Card, Screen, Text, useConfirm } from '@/components/ui';
 import { useTheme } from '@/theme';
 
 /**
@@ -28,6 +28,7 @@ import { useTheme } from '@/theme';
 export default function ActiveSessionScreen() {
   const router = useRouter();
 
+  const confirm = useConfirm();
   const { data: session, isLoading } = useActiveSession();
   const { data: profile } = useMyProfile();
   const endSession = useEndSession();
@@ -79,17 +80,18 @@ export default function ActiveSessionScreen() {
         size="large"
         fullWidth
         loading={endSession.isPending}
-        onPress={() => {
-          Alert.alert('End session?', 'Your logged sets are already saved.', [
-            { text: 'Keep going', style: 'cancel' },
-            {
-              text: 'End session',
-              onPress: async () => {
-                await endSession.mutateAsync(session.id);
-                router.replace('/(tabs)');
-              },
-            },
-          ]);
+        onPress={async () => {
+          // Uses the themed ConfirmProvider rather than Alert.alert, which is a
+          // no-op on react-native-web and made this button appear broken.
+          const confirmed = await confirm({
+            title: 'End session?',
+            message: 'Your logged sets are already saved.',
+            confirmLabel: 'End session',
+            cancelLabel: 'Keep going',
+          });
+          if (!confirmed) return;
+          await endSession.mutateAsync(session.id);
+          router.replace('/(tabs)');
         }}
       />
     </Screen>

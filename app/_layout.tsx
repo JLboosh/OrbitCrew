@@ -6,6 +6,7 @@ import { ActivityIndicator, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth } from '@/auth/AuthProvider';
+import { ConfirmProvider } from '@/components/ui';
 import { queryClient } from '@/lib/queryClient';
 import { ThemeProvider, useTheme } from '@/theme';
 
@@ -84,10 +85,17 @@ export default function RootLayout() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <SafeAreaProvider>
-          <AuthProvider>
-            <StatusBar style="auto" />
-            <RootNavigator />
-          </AuthProvider>
+          {/*
+            ConfirmProvider replaces React Native's Alert, which is a no-op on
+            web (react-native-web ships `static alert() {}`). Without it every
+            confirmation silently does nothing in a browser.
+          */}
+          <ConfirmProvider>
+            <AuthProvider>
+              <StatusBar style="auto" />
+              <RootNavigator />
+            </AuthProvider>
+          </ConfirmProvider>
         </SafeAreaProvider>
       </ThemeProvider>
     </QueryClientProvider>

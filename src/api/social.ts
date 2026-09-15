@@ -256,7 +256,18 @@ export function useUnblockUser() {
 // Crews
 // ---------------------------------------------------------------------------
 
-/** Crews the member belongs to. RLS makes non-member crews invisible. */
+/**
+ * Crews the member belongs to, one row per crew.
+ *
+ * The `user_id` filter is essential and not redundant with RLS. The
+ * `crew_members` SELECT policy permits reading EVERY member of a crew you belong
+ * to — which is what the member list needs — so without this filter the query
+ * returns one row per co-member. That produced duplicate React keys and, worse,
+ * `role` could be another member's role, showing admin controls to a plain
+ * member.
+ *
+ * Lesson: RLS defines what you MAY read, not what you MEANT to read.
+ */
 export function useMyCrews() {
   const { user } = useAuth();
 
@@ -267,6 +278,7 @@ export function useMyCrews() {
       const { data, error } = await supabase
         .from('crew_members')
         .select('role, joined_at, share_presence, activity_detail_override, crew:crews ( * )')
+        .eq('user_id', user!.id)
         .order('joined_at', { ascending: true });
       if (error) throw error;
       return data;

@@ -1,10 +1,13 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import {
   useActiveSession,
   useCheckOut,
+  useCrewLeaderboard,
+  useCrewMembers,
   useCrewProgress,
   useMyCrews,
   useMyPresence,
@@ -12,14 +15,32 @@ import {
   useRecentSessions,
   useStartSession,
 } from '@/api';
-import { Button, Card, ProgressBar, Screen, Text } from '@/components/ui';
+import {
+  Avatar,
+  AvatarStack,
+  Badge,
+  Button,
+  Card,
+  IconButton,
+  ListRow,
+  MiniBars,
+  ProgressBar,
+  Screen,
+  SectionHeader,
+  Text,
+  Wordmark,
+} from '@/components/ui';
 import { useTheme } from '@/theme';
 
 /**
- * Today — the screen that makes training frictionless.
+ * Today / Overview — makes training frictionless.
  *
- * One primary action above everything else. Mid-workout, with a phone in one
- * hand, the member should never have to hunt for "start" or "end".
+ * One primary action above everything else, because mid-workout with a phone in
+ * one hand the member should never hunt for "start" or "end".
+ *
+ * Layout follows the reference design:
+ *   * Phone — stacked cards under a wordmark header, bottom tab bar.
+ *   * Wide  — two columns, with live crew activity and challenges in a right rail.
  */
 export default function TodayScreen() {
   const theme = useTheme();
@@ -28,142 +49,394 @@ export default function TodayScreen() {
   const { data: profile } = useMyProfile();
   const { data: activeSession, isLoading: loadingSession } = useActiveSession();
   const { data: presence } = useMyPresence();
-  const { data: crews } = useMyCrews();
-  const { data: recent } = useRecentSessions(5);
+  const { data: memberships } = useMyCrews();
+  const { data: recent } = useRecentSessions(12);
 
   const startSession = useStartSession();
   const checkOut = useCheckOut();
 
-  const firstCrew = crews?.[0]?.crew;
-  const { data: crewProgress } = useCrewProgress(firstCrew?.id);
+  const crew = memberships?.[0]?.crew ?? null;
+  const { data: crewProgress } = useCrewProgress(crew?.id);
+  const { data: members } = useCrewMembers(crew?.id);
+  const { data: leaderboard } = useCrewLeaderboard(crew?.id);
 
-  const greeting = getGreeting();
   const firstName = profile?.display_name?.split(' ')[0] ?? 'there';
 
-  return (
-    <Screen title={`${greeting}, ${firstName}`} subtitle={encouragement(recent?.length ?? 0)}>
-      {/* Primary action. */}
-      <Card>
-        {loadingSession ? (
-          <Text variant="body" tone="muted">
-            Checking for an active session…
-          </Text>
-        ) : activeSession ? (
-          <View style={{ gap: theme.spacing.md }}>
-            <View>
-              <Text variant="caption" tone="muted">
-                Session in progress
-              </Text>
-              <ElapsedTimer startedAt={activeSession.started_at} />
-            </View>
-            <Button
-              label="Continue session"
-              size="large"
-              fullWidth
-              onPress={() => router.push('/session/active')}
-            />
-          </View>
-        ) : (
-          <View style={{ gap: theme.spacing.md }}>
-            <Text variant="subheading">Ready to train?</Text>
-            <Text variant="caption" tone="muted">
-              Start a session now, or pick a gym from the map to check in.
-            </Text>
-            <Button
-              label="Start session"
-              size="large"
-              fullWidth
-              loading={startSession.isPending}
-              onPress={async () => {
-                await startSession.mutateAsync({});
-                router.push('/session/active');
-              }}
-            />
-          </View>
-        )}
-      </Card>
+  const header = (
+    <View style={styles.headerRow}>
+      {theme.isWide ? (
+        <Text variant="caption" tone="muted">
+          {formatLongDate()} · Week {isoWeek()}
+        </Text>
+      ) : (
+        <Wordmark />
+      )}
+      <IconButton
+        icon="person-circle-outline"
+        label="Your profile and privacy settings"
+        onPress={() => router.push('/(tabs)/profile')}
+      />
+    </View>
+  );
 
-      {/* Presence, shown only when checked in, with a plain-language reminder
-          of who can see it. */}
-      {presence ? (
-        <Card>
-          <Text variant="subheading">
-            Checked in{presence.gym?.name ? ` at ${presence.gym.name}` : ''}
-          </Text>
-          <Text variant="caption" tone="muted">
-            Visible only to people you have chosen. Automatically ends by{' '}
-            {new Date(presence.expires_at).toLocaleTimeString([], {
-              hour: 'numeric',
-              minute: '2-digit',
-            })}
-            .
-          </Text>
-          <Button
-            label="Check out"
-            variant="ghost"
-            loading={checkOut.isPending}
-            onPress={() => checkOut.mutate()}
-          />
-        </Card>
+  /**
+   * Start / continue session, shared by both layouts.
+   *
+   * Computed as JSX rather than a nested component: a component declared inside
+   * render remounts on every parent update, which would restart the session
+   * timer's interval each second.
+   */
+  const primaryAction = loadingSession ? (
+    <Text variant="caption" tone="muted">
+      Checking for an active session…
+    </Text>
+  ) : activeSession ? (
+    <SessionPill
+      startedAt={activeSession.started_at}
+      fullWidth={!theme.isWide}
+      onPress={() => router.push('/session/active')}
+    />
+  ) : (
+    <Button
+      label="Start a session"
+      icon="play"
+      size="large"
+      fullWidth={!theme.isWide}
+      loading={startSession.isPending}
+      onPress={async () => {
+        await startSession.mutateAsync({});
+        router.push('/session/active');
+      }}
+    />
+  );
+
+  const heroCard = (
+    <Card variant="feature" style={{ gap: theme.spacing.lg }}>
+      {crew ? (
+        <Text variant="eyebrow" tone="muted">
+          {crew.name}
+        </Text>
       ) : null}
 
-      {/* Crew weekly goal. */}
-      {firstCrew && crewProgress ? (
-        <Card>
-          <Text variant="subheading">{firstCrew.name}</Text>
+      <View style={{ gap: theme.spacing.xs }}>
+        <Text variant="display" heading>
+          {greeting()},{' '}
+          <Text variant="display" tone="primary">
+            {firstName}.
+          </Text>
+        </Text>
+        <Text variant="body" tone="muted">
+          {crewProgress
+            ? goalSentence(
+                Number(crewProgress.sessions_completed),
+                Number(crewProgress.weekly_target),
+              )
+            : 'Every crew starts with one session.'}
+        </Text>
+      </View>
+
+      {crewProgress ? (
+        <View style={{ gap: theme.spacing.md }}>
           <ProgressBar
-            label="Weekly goal"
+            label="Weekly crew goal"
             value={Number(crewProgress.sessions_completed)}
             target={Number(crewProgress.weekly_target)}
             unit="sessions"
           />
-          <Text
-            variant="caption"
-            tone={Number(crewProgress.percent_complete) >= 100 ? 'success' : 'muted'}
-          >
-            {crewGoalMessage(Number(crewProgress.percent_complete))}
-          </Text>
-          <Button label="Open crew" variant="ghost" onPress={() => router.push('/(tabs)/crew')} />
-        </Card>
-      ) : null}
 
-      {/* Recent activity. */}
-      <Card>
-        <Text variant="subheading">Recent sessions</Text>
-        {recent?.length ? (
-          recent.map((session) => (
-            <View
-              key={session.id}
-              style={{
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                paddingVertical: theme.spacing.xs,
-              }}
-            >
-              <Text variant="body">
-                {new Date(session.started_at).toLocaleDateString([], {
-                  weekday: 'short',
-                  month: 'short',
-                  day: 'numeric',
-                })}
-              </Text>
-              <Text variant="body" tone="muted">
-                {formatDuration(session.duration_seconds)}
+          <View style={styles.betweenRow}>
+            <View style={[styles.headerRow, { gap: theme.spacing.md }]}>
+              {members?.length ? (
+                <AvatarStack
+                  members={members.map((m) => ({
+                    id: m.user_id,
+                    name: m.profile?.display_name ?? '?',
+                  }))}
+                />
+              ) : null}
+              <Text variant="caption" tone="muted">
+                {remainingLabel(
+                  Number(crewProgress.sessions_completed),
+                  Number(crewProgress.weekly_target),
+                )}
               </Text>
             </View>
-          ))
-        ) : (
+
+            {theme.isWide ? primaryAction : null}
+          </View>
+        </View>
+      ) : null}
+
+      {!theme.isWide ? primaryAction : null}
+    </Card>
+  );
+
+  const readyCard = (
+    <Card style={{ gap: theme.spacing.md }}>
+      <View style={styles.betweenRow}>
+        <Text variant="heading" heading>
+          {activeSession ? 'Session in progress' : 'Ready when you are'}
+        </Text>
+        {presence ? <Badge label="Checked in" tone="accent" live /> : null}
+      </View>
+
+      {presence?.gym?.name ? (
+        <View style={[styles.headerRow, { gap: theme.spacing.xs }]}>
+          <Ionicons name="location-outline" size={15} color={theme.colors.textMuted} />
+          <Text variant="caption" tone="muted">
+            {presence.gym.name} · until{' '}
+            {new Date(presence.expires_at).toLocaleTimeString([], {
+              hour: 'numeric',
+              minute: '2-digit',
+            })}
+          </Text>
+        </View>
+      ) : (
+        <Text variant="caption" tone="muted">
+          {activeSession
+            ? 'Log your sets as you go — everything saves immediately.'
+            : 'Start now, or pick a gym from Explore to check in.'}
+        </Text>
+      )}
+
+      {activeSession ? (
+        <SessionPill
+          startedAt={activeSession.started_at}
+          onPress={() => router.push('/session/active')}
+        />
+      ) : (
+        <Button
+          label="Start a session"
+          icon="play"
+          size="large"
+          fullWidth
+          loading={startSession.isPending}
+          onPress={async () => {
+            await startSession.mutateAsync({});
+            router.push('/session/active');
+          }}
+        />
+      )}
+
+      {presence ? (
+        <Button
+          label="Check out"
+          variant="ghost"
+          size="small"
+          loading={checkOut.isPending}
+          onPress={() => checkOut.mutate()}
+        />
+      ) : null}
+    </Card>
+  );
+
+  const leaderboardCard = (
+    <Card>
+      <SectionHeader
+        title="Weekly leaderboard"
+        actionLabel="Full board"
+        onAction={() => router.push('/(tabs)/crew')}
+      />
+      {leaderboard?.length ? (
+        leaderboard.slice(0, 4).map((row, index) => (
+          <ListRow
+            key={row.user_id}
+            title={row.is_caller ? 'You' : row.display_name}
+            subtitle={`${row.sessions_completed} session${Number(row.sessions_completed) === 1 ? '' : 's'} this week`}
+            value={String(row.sessions_completed)}
+            divider={index < Math.min(leaderboard.length, 4) - 1}
+            leading={
+              <View style={[styles.headerRow, { gap: theme.spacing.md }]}>
+                <Text variant="caption" tone="subtle">
+                  {String(index + 1).padStart(2, '0')}
+                </Text>
+                <Avatar id={row.user_id} name={row.display_name} size={34} />
+              </View>
+            }
+          />
+        ))
+      ) : (
+        <Text variant="caption" tone="muted">
+          No sessions logged this week yet.
+        </Text>
+      )}
+    </Card>
+  );
+
+  const momentumCard = (
+    <Card style={{ gap: theme.spacing.md }}>
+      <SectionHeader
+        title="Your momentum"
+        actionLabel="Details"
+        onAction={() => router.push('/(tabs)/progress')}
+      />
+      <MiniBars values={weeklyCounts(recent ?? [])} label="Sessions per week" />
+      <Text variant="caption" tone="muted">
+        {recent?.length ?? 0} session{recent?.length === 1 ? '' : 's'} recorded recently
+      </Text>
+    </Card>
+  );
+
+  const recentCard = (
+    <Card flush style={{ paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.sm }}>
+      <View style={{ paddingTop: theme.spacing.md }}>
+        <SectionHeader title="Recent sessions" />
+      </View>
+      {recent?.length ? (
+        recent.slice(0, 4).map((session, index) => (
+          <ListRow
+            key={session.id}
+            icon="barbell-outline"
+            title={new Date(session.started_at).toLocaleDateString([], {
+              weekday: 'long',
+              month: 'short',
+              day: 'numeric',
+            })}
+            subtitle={formatDuration(session.duration_seconds)}
+            divider={index < Math.min(recent.length, 4) - 1}
+          />
+        ))
+      ) : (
+        <View style={{ paddingBottom: theme.spacing.md }}>
           <Text variant="caption" tone="muted">
             No sessions yet. Your first one starts whenever you are ready.
           </Text>
-        )}
-      </Card>
+        </View>
+      )}
+    </Card>
+  );
+
+  // -------------------------------------------------------------------------
+  // Wide layout: main column plus a right rail.
+  // -------------------------------------------------------------------------
+  if (theme.isWide) {
+    return (
+      <Screen header={header}>
+        <View style={[styles.columns, { gap: theme.spacing.lg }]}>
+          <View style={{ flex: 2, gap: theme.spacing.lg }}>
+            {heroCard}
+            <View style={[styles.columns, { gap: theme.spacing.lg }]}>
+              <View style={{ flex: 1 }}>{leaderboardCard}</View>
+              <View style={{ flex: 1 }}>{momentumCard}</View>
+            </View>
+            {recentCard}
+          </View>
+
+          <View style={{ flex: 1, gap: theme.spacing.lg, minWidth: 280 }}>
+            {readyCard}
+            <Card>
+              <SectionHeader
+                title="Crew"
+                actionLabel="Open"
+                onAction={() => router.push('/(tabs)/crew')}
+              />
+              {crew ? (
+                <>
+                  <Text variant="subheading">{crew.name}</Text>
+                  <Text variant="caption" tone="muted">
+                    Resets Monday · {crew.timezone}
+                  </Text>
+                  <Text variant="caption" tone="muted">
+                    Sessions count past {crew.min_session_minutes} minutes.
+                  </Text>
+                </>
+              ) : (
+                <Text variant="caption" tone="muted">
+                  You are not in a crew yet.
+                </Text>
+              )}
+            </Card>
+          </View>
+        </View>
+      </Screen>
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Phone layout: stacked.
+  // -------------------------------------------------------------------------
+  return (
+    <Screen header={header} eyebrow={formatLongDate()} title={undefined}>
+      <Text variant="display" heading>
+        Make today{' '}
+        <Text variant="display" tone="primary">
+          count.
+        </Text>
+      </Text>
+
+      {readyCard}
+
+      {crew && crewProgress ? (
+        <Card variant="feature" style={{ gap: theme.spacing.md }}>
+          <Text variant="eyebrow" tone="muted">
+            {crew.name} · {members?.length ?? 0} members
+          </Text>
+
+          <View style={styles.betweenRow}>
+            <Text variant="metric">
+              {crewProgress.sessions_completed} / {crewProgress.weekly_target} sessions
+            </Text>
+            <Text variant="subheading" tone="primary">
+              {Math.round(Number(crewProgress.percent_complete))}%
+            </Text>
+          </View>
+
+          <ProgressBar
+            label="Weekly crew goal"
+            value={Number(crewProgress.sessions_completed)}
+            target={Number(crewProgress.weekly_target)}
+            showCounts={false}
+          />
+
+          <Text variant="caption" tone="muted">
+            {remainingLabel(
+              Number(crewProgress.sessions_completed),
+              Number(crewProgress.weekly_target),
+            )}
+          </Text>
+
+          {members?.length ? (
+            <AvatarStack
+              members={members.map((m) => ({
+                id: m.user_id,
+                name: m.profile?.display_name ?? '?',
+              }))}
+            />
+          ) : null}
+        </Card>
+      ) : null}
+
+      {leaderboardCard}
+      {recentCard}
     </Screen>
   );
 }
 
-/** Live elapsed time for the active session. */
-function ElapsedTimer({ startedAt }: { startedAt: string }) {
+/** Dark green pill showing the running session and its elapsed time. */
+function SessionPill({
+  startedAt,
+  onPress,
+  fullWidth = true,
+}: {
+  startedAt: string;
+  onPress: () => void;
+  fullWidth?: boolean;
+}) {
+  const elapsed = useElapsedSeconds(startedAt);
+
+  return (
+    <Button
+      label="Session active"
+      size="large"
+      fullWidth={fullWidth}
+      trailing={formatClock(elapsed)}
+      onPress={onPress}
+    />
+  );
+}
+
+/** Ticks once a second while a session is running. */
+function useElapsedSeconds(startedAt: string): number {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -171,13 +444,7 @@ function ElapsedTimer({ startedAt }: { startedAt: string }) {
     return () => clearInterval(id);
   }, []);
 
-  const elapsed = Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000));
-
-  return (
-    <Text variant="metric" accessibilityLabel={`Elapsed time ${formatDuration(elapsed)}`}>
-      {formatClock(elapsed)}
-    </Text>
-  );
+  return Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000));
 }
 
 function formatClock(totalSeconds: number): string {
@@ -185,11 +452,11 @@ function formatClock(totalSeconds: number): string {
   const m = Math.floor((totalSeconds % 3600) / 60);
   const s = totalSeconds % 60;
   const pad = (n: number) => String(n).padStart(2, '0');
-  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+  return `${pad(h)}:${pad(m)}:${pad(s)}`;
 }
 
 function formatDuration(seconds: number | null): string {
-  if (seconds == null) return '—';
+  if (seconds == null) return 'In progress';
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) return `${minutes} min`;
   const h = Math.floor(minutes / 60);
@@ -197,28 +464,84 @@ function formatDuration(seconds: number | null): string {
   return m === 0 ? `${h} h` : `${h} h ${m} min`;
 }
 
-function getGreeting(): string {
+function greeting(): string {
   const hour = new Date().getHours();
   if (hour < 12) return 'Good morning';
   if (hour < 18) return 'Good afternoon';
   return 'Good evening';
 }
 
+function formatLongDate(): string {
+  return new Date().toLocaleDateString([], {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  });
+}
+
+function isoWeek(): number {
+  const date = new Date();
+  const target = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNumber = (target.getUTCDay() + 6) % 7;
+  target.setUTCDate(target.getUTCDate() - dayNumber + 3);
+  const firstThursday = new Date(Date.UTC(target.getUTCFullYear(), 0, 4));
+  const firstDayNumber = (firstThursday.getUTCDay() + 6) % 7;
+  firstThursday.setUTCDate(firstThursday.getUTCDate() - firstDayNumber + 3);
+  return 1 + Math.round((target.getTime() - firstThursday.getTime()) / (7 * 86400000));
+}
+
 /**
  * Supportive copy in every branch.
  *
- * Deliberately never scolds. Someone opening the app after two weeks away is
- * already doing the hard part.
+ * Never scolds: someone opening the app after two weeks away is already doing the
+ * hard part.
  */
-function encouragement(recentCount: number): string {
-  if (recentCount === 0) return 'Every crew starts with one session.';
-  if (recentCount < 3) return 'Good to see you back.';
-  return 'You have been consistent lately.';
+function goalSentence(completed: number, target: number): string {
+  const remaining = Math.max(target - completed, 0);
+  if (remaining === 0) return 'Your crew hit its weekly goal. One more still counts.';
+  if (completed === 0) return 'Nothing logged yet this week. One session gets it moving.';
+  return `Your crew is ${Math.round((completed / Math.max(target, 1)) * 100)}% of the way there. One session takes the team closer.`;
 }
 
-function crewGoalMessage(percent: number): string {
-  if (percent >= 100) return 'Your crew hit its weekly goal.';
-  if (percent >= 75) return `Your crew is ${Math.round(percent)}% of the way there.`;
-  if (percent >= 25) return `${Math.round(percent)}% of the way. Every session counts.`;
-  return 'Early in the week. Plenty of time.';
+function remainingLabel(completed: number, target: number): string {
+  const remaining = Math.max(target - completed, 0);
+  if (remaining === 0) return 'Goal reached';
+  return `${remaining} session${remaining === 1 ? '' : 's'} to go`;
 }
+
+/** Buckets recent sessions into the last 8 weeks for the momentum sparkline. */
+function weeklyCounts(sessions: { started_at: string }[]): number[] {
+  const weeks = new Array(8).fill(0) as number[];
+  const now = Date.now();
+
+  for (const session of sessions) {
+    const ageWeeks = Math.floor((now - new Date(session.started_at).getTime()) / (7 * 86400000));
+    if (ageWeeks < 0 || ageWeeks >= weeks.length) continue;
+
+    // Reverse so the most recent week is the last (emphasised) bar.
+    const index = weeks.length - 1 - ageWeeks;
+    weeks[index] = (weeks[index] ?? 0) + 1;
+  }
+
+  return weeks;
+}
+
+const styles = StyleSheet.create({
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  betweenRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  columns: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    flexWrap: 'wrap',
+  },
+});

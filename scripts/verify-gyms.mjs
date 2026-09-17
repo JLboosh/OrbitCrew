@@ -306,4 +306,192 @@ await harness.run(async ({ admin, createUser, check, section }) => {
     .from('gym_reports')
     .insert({ reporter_id: alex.id, reason: 'spam' });
   check('a report must reference a gym or a rating', !!targetlessErr);
+
+  // -------------------------------------------------------------------------
+  section('10. Member-submitted gyms');
+
+  // A point well away from the imported campus data, so the duplicate checks below
+  // are testing this suite's own rows rather than colliding with real gyms.
+  const SUBMIT = { lat: 43.3, lon: -80.3 };
+  const uniqueName = `Verify Gym ${Date.now()}`;
+  const submitted = [];
+
+  const { data: createdId, error: createErr } = await alex.client.rpc('create_user_gym', {
+    p_name: uniqueName,
+    p_latitude: SUBMIT.lat,
+    p_longitude: SUBMIT.lon,
+    p_address: '1 Verification Road',
+    p_city: 'Waterloo',
+    p_description: 'Created by verify-gyms.mjs',
+    p_website: 'https://example.com/gym',
+  });
+  check('member can submit a gym through the moderated RPC', !createErr, createErr?.message);
+  check('the RPC returns the new gym id', typeof createdId === 'string', String(createdId));
+  if (typeof createdId === 'string') submitted.push(createdId);
+
+  const { data: createdGym } = await alex.client
+    .from('gyms')
+    .select('*')
+    .eq('id', createdId)
+    .maybeSingle();
+
+  check('the submitted gym is readable by its author', !!createdGym);
+  check(
+    "source is forced to 'user' rather than taken from the caller",
+    createdGym?.source === 'user',
+    `source=${createdGym?.source}`,
+  );
+  check('created_by records who submitted it', createdGym?.created_by === alex.id);
+  check('the description is stored', createdGym?.description === 'Created by verify-gyms.mjs');
+
+  // The whole point of the feature: it behaves like any other gym.
+  const { data: sameSees } = await sam.client.from('gyms').select('id').eq('id', createdId);
+  check('another member can see a submitted gym', sameSees?.length === 1);
+
+  const { data: submittedNearby } = await sam.client.rpc('nearby_gyms', {
+    p_latitude: SUBMIT.lat,
+    p_longitude: SUBMIT.lon,
+    p_radius_metres: 1000,
+    p_limit: 10,
+  });
+  check(
+    'a submitted gym is returned by nearby_gyms like any other',
+    (submittedNearby ?? []).some((g) => g.id === createdId),
+  );
+
+  const { error: submittedCheckInErr } = await sam.client.rpc('check_in', {
+    p_gym_id: createdId,
+    p_duration_minutes: 30,
+  });
+  check(
+    'a member can check in at a submitted gym',
+    !submittedCheckInErr,
+    submittedCheckInErr?.message,
+  );
+  await sam.client.rpc('check_out');
+
+  // -------------------------------------------------------------------------
+  section('11. Submitted gyms are validated server-side');
+
+  const { error: noNameErr } = await alex.client.rpc('create_user_gym', {
+    p_name: 'x',
+    p_latitude: SUBMIT.lat,
+    p_longitude: SUBMIT.lon,
+  });
+  check('a one-character name is rejected', !!noNameErr);
+
+  const { error: badLatErr } = await alex.client.rpc('create_user_gym', {
+    p_name: `Verify Bad Coords ${Date.now()}`,
+    p_latitude: 999,
+    p_longitude: 0,
+  });
+  check('an out-of-range latitude is rejected', !!badLatErr);
+
+  const { error: badSiteErr } = await alex.client.rpc('create_user_gym', {
+    p_name: `Verify Bad Site ${Date.now()}`,
+    p_latitude: SUBMIT.lat + 0.05,
+    p_longitude: SUBMIT.lon + 0.05,
+    p_website: 'javascript:alert(1)',
+  });
+  check('a website without an http(s) scheme is rejected', !!badSiteErr);
+
+  const { error: badImageErr } = await alex.client.rpc('create_user_gym', {
+    p_name: `Verify Bad Image ${Date.now()}`,
+    p_latitude: SUBMIT.lat + 0.06,
+    p_longitude: SUBMIT.lon + 0.06,
+    p_image_url: 'not-a-url',
+  });
+  check('an image link without an http(s) scheme is rejected', !!badImageErr);
+
+  // -------------------------------------------------------------------------
+  section('12. Duplicate detection');
+
+  const { data: similar, error: similarErr } = await sam.client.rpc('find_similar_gyms', {
+    p_name: uniqueName,
+    p_latitude: SUBMIT.lat,
+    p_longitude: SUBMIT.lon,
+    p_limit: 5,
+  });
+  check('find_similar_gyms executes for a normal member', !similarErr, similarErr?.message);
+  check(
+    'an identical name at the same point is found',
+    (similar ?? []).some((g) => g.id === createdId),
+  );
+  check(
+    'and is flagged as a probable duplicate',
+    (similar ?? []).find((g) => g.id === createdId)?.is_probable_duplicate === true,
+  );
+  check(
+    'the reason is reported so the member can judge it',
+    (similar ?? []).find((g) => g.id === createdId)?.match_reason === 'same_name',
+  );
+
+  // Normalisation: punctuation, casing, and filler words must not defeat the check.
+  const { data: normalised } = await sam.client.rpc('find_similar_gyms', {
+    p_name: `${uniqueName.toUpperCase()} FITNESS CENTRE!`,
+    p_latitude: SUBMIT.lat,
+    p_longitude: SUBMIT.lon,
+    p_limit: 5,
+  });
+  check(
+    'casing, punctuation, and filler words do not defeat duplicate detection',
+    (normalised ?? []).some((g) => g.id === createdId),
+  );
+
+  const { error: certainDupErr } = await sam.client.rpc('create_user_gym', {
+    p_name: uniqueName,
+    p_latitude: SUBMIT.lat,
+    p_longitude: SUBMIT.lon,
+    // Even with confirmation: a same-named gym within 400 m is not a judgement call.
+    p_confirm_possible_duplicate: true,
+  });
+  check(
+    'a near-certain duplicate is refused even when confirmed',
+    !!certainDupErr,
+    'duplicate was created',
+  );
+  check(
+    'and the refusal names the existing gym so it can be opened instead',
+    certainDupErr?.message?.includes(uniqueName) ?? false,
+    certainDupErr?.message,
+  );
+
+  // Far enough away to be a genuinely different gym with the same name — a chain.
+  const chainName = uniqueName;
+  const { data: chainId, error: chainErr } = await sam.client.rpc('create_user_gym', {
+    p_name: chainName,
+    p_latitude: SUBMIT.lat + 0.2,
+    p_longitude: SUBMIT.lon + 0.2,
+  });
+  check('the same name far away is allowed, because chains exist', !chainErr, chainErr?.message);
+  if (typeof chainId === 'string') submitted.push(chainId);
+
+  // -------------------------------------------------------------------------
+  section('13. Submission rate limit');
+
+  let limitHit = false;
+  for (let index = 0; index < 6; index += 1) {
+    const { data: id, error } = await alex.client.rpc('create_user_gym', {
+      p_name: `Verify Ratelimit ${Date.now()}-${index}`,
+      // Spread out so the duplicate checks do not fire instead of the rate limit.
+      p_latitude: SUBMIT.lat + 0.4 + index * 0.05,
+      p_longitude: SUBMIT.lon + 0.4 + index * 0.05,
+    });
+    if (typeof id === 'string') submitted.push(id);
+    if (error?.message?.includes('five gyms today')) {
+      limitHit = true;
+      break;
+    }
+  }
+  check('a member cannot submit more than five gyms a day', limitHit);
+
+  // -------------------------------------------------------------------------
+  // Verification must not leave data behind, and must never mutate rows it did
+  // not create — a previous script overwrote two real gyms with test
+  // coordinates. Only ids captured above are removed, with the service role,
+  // because members deliberately have no DELETE policy on gyms.
+  for (const id of submitted) {
+    await admin.from('gyms').delete().eq('id', id);
+  }
+  console.log(`     cleaned up ${submitted.length} submitted gyms`);
 });

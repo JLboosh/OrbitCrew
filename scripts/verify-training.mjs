@@ -704,4 +704,179 @@ await harness.run(async ({ admin, createUser, check, section }) => {
     visitsNamed?.named_visitors?.length === 1,
     `named: ${JSON.stringify(visitsNamed?.named_visitors)}`,
   );
+
+  // -------------------------------------------------------------------------
+  section('12. Workout types on sessions');
+
+  const { data: typedSession, error: typedErr } = await alex.client
+    .from('sessions')
+    .insert({
+      user_id: alex.id,
+      workout_categories: ['chest', 'triceps'],
+      started_at: new Date(Date.now() - 90 * 60_000).toISOString(),
+      ended_at: new Date(Date.now() - 30 * 60_000).toISOString(),
+    })
+    .select()
+    .single();
+  check('a session can record what was trained', !typedErr, typedErr?.message);
+  check(
+    'the categories round-trip as an array',
+    JSON.stringify(typedSession?.workout_categories) === JSON.stringify(['chest', 'triceps']),
+    JSON.stringify(typedSession?.workout_categories),
+  );
+
+  const { data: untypedSession } = await alex.client
+    .from('sessions')
+    .insert({
+      user_id: alex.id,
+      started_at: new Date(Date.now() - 200 * 60_000).toISOString(),
+      ended_at: new Date(Date.now() - 140 * 60_000).toISOString(),
+    })
+    .select()
+    .single();
+  check(
+    'a session with no chosen type defaults to an empty array, never null',
+    Array.isArray(untypedSession?.workout_categories) &&
+      untypedSession.workout_categories.length === 0,
+    JSON.stringify(untypedSession?.workout_categories),
+  );
+
+  const { error: bogusCategoryErr } = await alex.client
+    .from('sessions')
+    .update({ workout_categories: ['leg_day'] })
+    .eq('id', typedSession.id);
+  check('an unknown category is rejected by the CHECK constraint', !!bogusCategoryErr);
+
+  const { error: tooManyErr } = await alex.client
+    .from('sessions')
+    .update({ workout_categories: ['chest', 'back', 'legs', 'core', 'arms'] })
+    .eq('id', typedSession.id);
+  check('more than four categories is rejected', !!tooManyErr);
+
+  // -------------------------------------------------------------------------
+  section('13. Daily challenge');
+
+  const { data: dailyTemplate } = await alex.client
+    .from('challenge_templates')
+    .select('*')
+    .eq('key', 'daily_session')
+    .maybeSingle();
+  check('the daily template is seeded', !!dailyTemplate);
+  check(
+    'it scores with the existing session_count rule rather than a new one',
+    dailyTemplate?.rule_type === 'session_count',
+    dailyTemplate?.rule_type,
+  );
+  check(
+    'it awards no badge, so a daily badge cannot flood the profile',
+    dailyTemplate?.badge_key === null,
+    `badge_key=${dailyTemplate?.badge_key}`,
+  );
+
+  /** Creates a daily challenge for one member, the way the app does. */
+  async function createDaily(member, dayKey, startsAt, endsAt) {
+    return member.client
+      .from('challenges')
+      .insert({
+        template_key: 'daily_session',
+        scope: 'personal',
+        owner_id: member.id,
+        created_by: member.id,
+        name: 'Daily Challenge',
+        rule_type: 'session_count',
+        rule: { target: 1, day: dayKey },
+        target: 1,
+        starts_at: startsAt,
+        ends_at: endsAt,
+        timezone: 'America/Toronto',
+        visibility: 'private',
+      })
+      .select()
+      .single();
+  }
+
+  // A window wide enough to contain the session logged above.
+  const dayStart = new Date(Date.now() - 12 * 3600_000).toISOString();
+  const dayEnd = new Date(Date.now() + 12 * 3600_000).toISOString();
+  const dayKey = '2999-01-01';
+
+  const { data: alexDaily, error: alexDailyErr } = await createDaily(
+    alex,
+    dayKey,
+    dayStart,
+    dayEnd,
+  );
+  check('a member can create their own daily challenge', !alexDailyErr, alexDailyErr?.message);
+
+  const { error: duplicateDailyErr } = await createDaily(alex, dayKey, dayStart, dayEnd);
+  check(
+    'a second one for the same day is refused by the unique index',
+    !!duplicateDailyErr,
+    'duplicate daily challenge was created',
+  );
+
+  // THE BUG THIS GUARDS: the only seeded challenge used to be crew-scoped, so
+  // anyone outside that crew had nothing to open. A daily challenge must work for
+  // a member with no crew at all.
+  const { data: outsiderDaily, error: outsiderDailyErr } = await createDaily(
+    outsider,
+    dayKey,
+    dayStart,
+    dayEnd,
+  );
+  check(
+    'a member in no crew can still get a daily challenge',
+    !outsiderDailyErr,
+    outsiderDailyErr?.message,
+  );
+
+  const { error: joinDailyErr } = await alex.client
+    .from('challenge_participants')
+    .insert({ challenge_id: alexDaily.id, user_id: alex.id });
+  check('the member can enrol themselves', !joinDailyErr, joinDailyErr?.message);
+
+  await alex.client.rpc('rescore_challenge', { p_challenge_id: alexDaily.id });
+
+  const { data: dailyProgress } = await alex.client
+    .from('challenge_participants')
+    .select('progress, completed_at')
+    .eq('challenge_id', alexDaily.id)
+    .eq('user_id', alex.id)
+    .single();
+  check(
+    "today's qualifying session counts toward it",
+    Number(dailyProgress?.progress) >= 1,
+    `progress=${dailyProgress?.progress}`,
+  );
+  check('reaching the target marks it complete', dailyProgress?.completed_at !== null);
+
+  // Each member's challenge is their own: one person completing theirs must not
+  // move anybody else's.
+  const { data: outsiderProgress } = await outsider.client
+    .from('challenge_participants')
+    .select('progress')
+    .eq('challenge_id', outsiderDaily.id);
+  check(
+    "one member's daily challenge is invisible in another's participation",
+    (outsiderProgress?.length ?? 0) === 0,
+    'outsider unexpectedly enrolled',
+  );
+
+  const { data: samSeesAlexDaily } = await sam.client
+    .from('challenges')
+    .select('id')
+    .eq('id', alexDaily.id);
+  check(
+    "a crew mate cannot read another member's personal daily challenge",
+    (samSeesAlexDaily?.length ?? 0) === 0,
+  );
+
+  // A different day is a different challenge, which is what makes the reset work.
+  const { error: nextDayErr } = await createDaily(
+    alex,
+    '2999-01-02',
+    new Date(Date.now() + 24 * 3600_000).toISOString(),
+    new Date(Date.now() + 48 * 3600_000).toISOString(),
+  );
+  check('tomorrow gets its own challenge, so the reset is real', !nextDayErr, nextDayErr?.message);
 });

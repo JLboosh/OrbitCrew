@@ -48,4 +48,19 @@ export interface GymMapViewProps {
   onCentreChange?: (centre: LatLng) => void;
   /** Height in pixels. Web only; the schematic is square by construction. */
   height?: number;
+
+  /**
+   * Turns the map into a location picker for adding a gym.
+   *
+   * Both implementations honour this, which is what makes "drop a pin" work
+   * without a native map module: on web it is a click on a real MapLibre map, and
+   * on native it is a tap on the schematic plot, whose projection is exact and
+   * therefore invertible. The pin is a PLACE, not a person — the rule that no
+   * marker is ever drawn at a user's position is unaffected.
+   */
+  pinMode?: boolean;
+  /** The currently chosen point, drawn distinctly from the gym markers. */
+  pinLocation?: LatLng | null;
+  /** Fires when the member picks a point. Only called while `pinMode` is set. */
+  onPickLocation?: (point: LatLng) => void;
 }

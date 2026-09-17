@@ -6,15 +6,18 @@ import { createClient } from '@supabase/supabase-js';
 import 'react-native-url-polyfill/auto';
 
 import { env } from '@/config/env';
-import type { Database } from '@/types/database.types';
+import type { Database } from '@/types/database';
 
 /**
  * The single Supabase client for the app.
  *
- * Typed with the generated `Database` type, so every query, insert, and enum
- * value is checked at compile time. Regenerate after any migration:
+ * Typed with the `Database` type from `@/types/database`, which is the generated
+ * `database.types.ts` plus the additions from the latest migration that has not
+ * been reflected into the generated file yet. Regenerate after any migration:
  *
  *   npm run db:types
+ *
+ * and then prune whatever `@/types/database` is still declaring by hand.
  *
  * SECURITY: this uses the anon key, which ships inside the app bundle and is
  * therefore public. It confers no authority by itself — row-level security

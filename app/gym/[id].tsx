@@ -1,6 +1,6 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Image, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import {
   RATING_AXES,
@@ -92,6 +92,29 @@ export default function GymDetailScreen() {
 
   return (
     <Screen title={gym.name} subtitle={gym.address ?? gym.city ?? undefined}>
+      {/* Photo and description, when a member supplied them. Above the check-in
+          card because they answer "is this the right place" — which is the
+          question you have before you have the question "should I check in". */}
+      {gym.image_url || gym.description ? (
+        <Card style={{ gap: theme.spacing.sm }}>
+          {gym.image_url ? (
+            <Image
+              source={{ uri: gym.image_url }}
+              accessibilityLabel={`Photo of ${gym.name}`}
+              resizeMode="cover"
+              style={[styles.photo, { borderRadius: theme.radius.md }]}
+            />
+          ) : null}
+          {gym.description ? <Text variant="body">{gym.description}</Text> : null}
+          {gym.source === 'user' ? (
+            <Text variant="caption" tone="subtle">
+              Added by a member, so the details are theirs rather than OpenStreetMap&apos;s. Report
+              it if anything is wrong.
+            </Text>
+          ) : null}
+        </Card>
+      ) : null}
+
       {/* Check in. The primary action on this screen. */}
       <Card>
         {presenceHere ? (
@@ -531,6 +554,10 @@ function ScorePicker({
 }
 
 const styles = StyleSheet.create({
+  photo: {
+    width: '100%',
+    height: 180,
+  },
   reviewInput: {
     borderWidth: 1,
     minHeight: 88,

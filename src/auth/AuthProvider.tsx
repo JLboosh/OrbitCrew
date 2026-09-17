@@ -1,5 +1,14 @@
 import type { Session, User } from '@supabase/supabase-js';
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 
 import { supabase } from '@/lib/supabase';
 
@@ -36,6 +45,56 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [initialising, setInitialising] = useState(true);
+
+  const queryClient = useQueryClient();
+  /**
+   * The id the cache currently holds data for.
+   *
+   * `undefined` means "not established yet", which is distinct from `null` ("no
+   * one is signed in") — the difference is what stops a cold start from throwing
+   * away a cache that was just populated.
+   */
+  const cachedUserId = useRef<string | null | undefined>(undefined);
+
+  /**
+   * Discard cached data when the signed-in member changes.
+   *
+   * THIS FIXES A REAL, USER-VISIBLE BUG, not a hypothetical one. Most query keys
+   * in `queryKeys` describe "mine" rather than "this user's": `['challenges',
+   * 'mine']`, `['session', 'active']`, `['sessions']`, `['presence']`,
+   * `['progress', ...]`, `['crews']`, `['badges', 'mine']`. Nothing about those
+   * keys mentions who "mine" is, and the cache outlives a sign-out — so signing
+   * in as a second account served the FIRST account's rows for up to `gcTime`.
+   *
+   * The symptom was specific and misleading: switching between the seeded demo
+   * accounts showed a challenge list belonging to the previous member, and
+   * opening one of those challenges hit RLS, returned no row, and rendered "not
+   * available". It looked like certain members were locked out of a challenge.
+   * They were not — they were being shown somebody else's.
+   *
+   * Clearing on identity change is the fix that cannot be forgotten: a new
+   * user-scoped query added later inherits it for free, whereas remembering to
+   * put a user id in every future key would not survive one distracted afternoon.
+   */
+  useEffect(() => {
+    // The persisted session is read asynchronously, so until that resolves
+    // `session` is null for a reason that is not "signed out". Acting on it would
+    // make every cold start clear the cache.
+    if (initialising) return;
+
+    const nextUserId = session?.user?.id ?? null;
+
+    if (cachedUserId.current === undefined) {
+      cachedUserId.current = nextUserId;
+      return;
+    }
+    // A token refresh re-emits the same user; that must not wipe the cache
+    // mid-workout.
+    if (cachedUserId.current === nextUserId) return;
+
+    cachedUserId.current = nextUserId;
+    queryClient.clear();
+  }, [session, initialising, queryClient]);
 
   useEffect(() => {
     let active = true;

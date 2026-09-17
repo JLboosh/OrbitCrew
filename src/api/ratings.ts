@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/auth/AuthProvider';
 import { queryKeys } from '@/lib/queryClient';
 import { supabase } from '@/lib/supabase';
-import type { Database } from '@/types/database.types';
+import type { Database } from '@/types/database';
 
 export type Gym = Database['public']['Tables']['gyms']['Row'];
 export type GymRating = Database['public']['Tables']['gym_ratings']['Row'];

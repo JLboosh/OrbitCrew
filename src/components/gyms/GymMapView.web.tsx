@@ -25,7 +25,7 @@ import {
   CAMPUS_LABEL_LAYER_ID,
   CAMPUS_SOURCE_ID,
 } from '@/lib/mapStyle';
-import { avatarColor, useTheme } from '@/theme';
+import { avatarColor, readableTextOn, useTheme } from '@/theme';
 
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -98,6 +98,9 @@ export function GymMapView({
   hasDeviceLocation = false,
   onCentreChange,
   height = 460,
+  pinMode = false,
+  pinLocation = null,
+  onPickLocation,
 }: GymMapViewProps) {
   const theme = useTheme();
 
@@ -130,11 +133,15 @@ export function GymMapView({
    */
   const onSelectGymRef = useRef(onSelectGym);
   const onCentreChangeRef = useRef(onCentreChange);
+  const onPickLocationRef = useRef(onPickLocation);
+  const pinModeRef = useRef(pinMode);
 
   useEffect(() => {
     onSelectGymRef.current = onSelectGym;
     onCentreChangeRef.current = onCentreChange;
-  }, [onSelectGym, onCentreChange]);
+    onPickLocationRef.current = onPickLocation;
+    pinModeRef.current = pinMode;
+  }, [onSelectGym, onCentreChange, onPickLocation, pinMode]);
 
   // ---------------------------------------------------------------------------
   // Map lifecycle. Created once; the style is swapped when the colour scheme
@@ -203,6 +210,17 @@ export function GymMapView({
     map.on('move', syncCamera);
     map.on('moveend', handleMoveEnd);
     map.on('zoomend', syncCamera);
+
+    // Pin placement. Registered once and gated on a ref rather than re-registered
+    // whenever `pinMode` flips: adding and removing a listener on a live map is
+    // how you end up with two of them.
+    map.on('click', (event) => {
+      if (!pinModeRef.current) return;
+      onPickLocationRef.current?.({
+        latitude: event.lngLat.lat,
+        longitude: event.lngLat.lng,
+      });
+    });
 
     return () => {
       Object.values(markersRef.current).forEach((marker) => marker.remove());
@@ -346,6 +364,38 @@ export function GymMapView({
     theme.colors.surface,
   ]);
 
+  // The candidate location for a new gym. Coral and ringed, so it reads as "not a
+  // gym yet" rather than as one more green pin among the existing ones.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !pinLocation) return;
+
+    const element = document.createElement('div');
+    element.setAttribute('aria-hidden', 'true');
+    element.style.width = '22px';
+    element.style.height = '22px';
+    element.style.borderRadius = '50%';
+    element.style.backgroundColor = theme.colors.accent;
+    element.style.border = `3px solid ${theme.colors.surface}`;
+    element.style.boxShadow = '0 2px 8px rgba(0,0,0,0.4)';
+
+    const marker = new Marker({ element, anchor: 'center' })
+      .setLngLat([pinLocation.longitude, pinLocation.latitude])
+      .addTo(map);
+
+    return () => {
+      marker.remove();
+    };
+  }, [pinLocation, ready, theme.colors.accent, theme.colors.surface]);
+
+  // A crosshair cursor is the only affordance telling a member the map is now a
+  // picker rather than a map.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    map.getCanvas().style.cursor = pinMode ? 'crosshair' : '';
+  }, [pinMode, ready]);
+
   const resetNorth = useCallback(() => {
     // Bearing AND pitch: "north" on a tilted map is still not the overhead view
     // the control promises.
@@ -371,9 +421,11 @@ export function GymMapView({
   const isRotated = Math.abs(bearing) > 0.5 || pitch > 0.5;
 
   const gymNoun = gyms.length === 1 ? 'gym' : 'gyms';
-  const summaryLabel = campusMode
-    ? `Interactive 3D map of the University of Waterloo campus showing ${gyms.length} ${gymNoun}. Drag to pan, right-drag to rotate and tilt, scroll to zoom.`
-    : `Interactive map showing ${gyms.length} ${gymNoun} nearby. Drag to pan, right-drag to rotate and tilt, scroll to zoom.`;
+  const summaryLabel = pinMode
+    ? `Interactive map in pin-placement mode. Click anywhere to set the new gym's location. ${gyms.length} existing ${gymNoun} shown for reference.`
+    : campusMode
+      ? `Interactive 3D map of the University of Waterloo campus showing ${gyms.length} ${gymNoun}. Drag to pan, right-drag to rotate and tilt, scroll to zoom.`
+      : `Interactive map showing ${gyms.length} ${gymNoun} nearby. Drag to pan, right-drag to rotate and tilt, scroll to zoom.`;
 
   return (
     <View style={{ gap: theme.spacing.sm }}>
@@ -437,12 +489,16 @@ export function GymMapView({
               paddingVertical: 5,
             }}
           >
-            <Text variant="caption" tone={campusMode ? 'primary' : 'muted'}>
-              {campusMode ? '3D campus · University of Waterloo' : 'Nearby gyms'}
+            <Text variant="caption" tone={pinMode ? 'accent' : campusMode ? 'primary' : 'muted'}>
+              {pinMode
+                ? 'Click to place your gym'
+                : campusMode
+                  ? '3D campus · University of Waterloo'
+                  : 'Nearby gyms'}
             </Text>
           </View>
 
-          {!campusMode ? (
+          {!campusMode && !pinMode ? (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Show the University of Waterloo campus in 3D"
@@ -470,6 +526,7 @@ export function GymMapView({
       ) : null}
 
       <Text variant="caption" tone="subtle">
+        {pinMode ? 'Click the map to set the location. ' : ''}
         Drag to pan, scroll to zoom, right-drag (or two fingers) to rotate and tilt.
         {campusMode
           ? ' Campus buildings are OpenStreetMap footprints; heights are estimated from floor counts where not surveyed.'
@@ -586,7 +643,16 @@ function MarkerAvatar({ member, overlap }: { member: GymPresenceMember; overlap:
         borderColor: theme.colors.primary,
       }}
     >
-      <Text style={{ fontSize: 11, lineHeight: 14, fontWeight: '700', color: '#FFFFFF' }}>
+      {/* Derived from the background: the dark avatar palette includes a
+          near-white entry, on which white initials vanish. */}
+      <Text
+        style={{
+          fontSize: 11,
+          lineHeight: 14,
+          fontWeight: '700',
+          color: readableTextOn(background),
+        }}
+      >
         {initial}
       </Text>
     </View>

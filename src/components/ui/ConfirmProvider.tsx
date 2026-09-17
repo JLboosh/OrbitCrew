@@ -74,7 +74,15 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
         onRequestClose={() => settle(false)}
       >
         <Pressable
-          style={styles.backdrop}
+          style={[
+            styles.backdrop,
+            {
+              // Heavier scrim in dark mode: a 45% veil that separates a white
+              // sheet from a pale canvas barely registers against a near-black
+              // one, leaving the modal looking unanchored.
+              backgroundColor: theme.isDark ? 'rgba(4, 8, 6, 0.72)' : 'rgba(16, 24, 20, 0.45)',
+            },
+          ]}
           accessibilityLabel="Dismiss"
           onPress={() => settle(false)}
         >
@@ -137,7 +145,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(16, 24, 20, 0.45)',
     padding: 24,
   },
   sheet: {

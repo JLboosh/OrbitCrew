@@ -59,25 +59,55 @@ function RootNavigator() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(tabs)" />
+      {/*
+        Workout flow: choose type -> track -> (history detail).
+        `session/new` and `session/active` are static segments, so they take
+        precedence over `session/[id]` and the dynamic route never swallows them.
+      */}
+      <Stack.Screen
+        name="session/new"
+        options={{ headerShown: true, title: 'Start workout', presentation: 'modal' }}
+      />
       <Stack.Screen
         name="session/active"
         options={{
           headerShown: true,
-          title: 'Active session',
+          title: 'Workout',
           // Presented as a sheet: logging happens on top of whatever the member
           // was doing, and dismissing must not lose the session.
           presentation: 'modal',
         }}
       />
+      <Stack.Screen name="session/[id]" options={{ headerShown: true, title: 'Workout' }} />
       <Stack.Screen name="gym/[id]" options={{ headerShown: true, title: 'Gym' }} />
+      <Stack.Screen
+        name="gym/new"
+        options={{ headerShown: true, title: 'Add a gym', presentation: 'modal' }}
+      />
       <Stack.Screen name="challenges/index" options={{ headerShown: true, title: 'Challenges' }} />
       <Stack.Screen
         name="challenges/new"
         options={{ headerShown: true, title: 'New challenge', presentation: 'modal' }}
       />
+      <Stack.Screen
+        name="challenges/daily"
+        options={{ headerShown: true, title: 'Daily challenge' }}
+      />
       <Stack.Screen name="challenges/[id]" options={{ headerShown: true, title: 'Challenge' }} />
     </Stack>
   );
+}
+
+/**
+ * Status bar contrast, driven by the app's own scheme rather than `style="auto"`.
+ *
+ * `auto` follows the SYSTEM scheme, so a member who forced dark mode on a
+ * light-mode phone got dark status-bar icons on the app's near-black canvas —
+ * invisible. The bar has to follow whatever the app is actually painting.
+ */
+function ThemedStatusBar() {
+  const theme = useTheme();
+  return <StatusBar style={theme.isDark ? 'light' : 'dark'} />;
 }
 
 export default function RootLayout() {
@@ -92,7 +122,7 @@ export default function RootLayout() {
           */}
           <ConfirmProvider>
             <AuthProvider>
-              <StatusBar style="auto" />
+              <ThemedStatusBar />
               <RootNavigator />
             </AuthProvider>
           </ConfirmProvider>

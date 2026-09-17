@@ -1,4 +1,4 @@
-import type { Database } from '@/types/database.types';
+import type { Database } from '@/types/database';
 
 export type WeightUnit = Database['public']['Enums']['weight_unit'];
 

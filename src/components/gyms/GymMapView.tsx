@@ -1,11 +1,23 @@
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import {
+  Pressable,
+  StyleSheet,
+  View,
+  type GestureResponderEvent,
+  type LayoutChangeEvent,
+} from 'react-native';
 
 import type { GymMapViewProps } from './GymMapView.types';
 
 import type { NearbyGym } from '@/api';
 import { Text } from '@/components/ui';
-import { formatDistance, projectToUnitSquare, type DistanceSystem, type LatLng } from '@/lib/geo';
+import {
+  formatDistance,
+  projectToUnitSquare,
+  unprojectFromUnitSquare,
+  type DistanceSystem,
+  type LatLng,
+} from '@/lib/geo';
 import { useTheme } from '@/theme';
 
 /**
@@ -56,6 +68,9 @@ export function GymMapView({
   selectedGymId,
   onSelectGym,
   distanceSystem = 'metric',
+  pinMode = false,
+  pinLocation = null,
+  onPickLocation,
 }: GymMapViewProps) {
   const theme = useTheme();
   const [size, setSize] = useState(0);
@@ -76,19 +91,50 @@ export function GymMapView({
   const midRadiusLabel = formatDistance(radiusMetres / 2, distanceSystem);
   const outerRadiusLabel = formatDistance(radiusMetres, distanceSystem);
   const gymNoun = gyms.length === 1 ? 'gym' : 'gyms';
-  const summaryLabel = `Schematic map of ${gyms.length} nearby ${gymNoun} within ${outerRadiusLabel}`;
+  const summaryLabel = pinMode
+    ? `Schematic map. Tap anywhere to place the new gym. ${gyms.length} existing ${gymNoun} shown for reference.`
+    : `Schematic map of ${gyms.length} nearby ${gymNoun} within ${outerRadiusLabel}`;
+
+  /**
+   * Turns a tap into a coordinate.
+   *
+   * Exact rather than approximate: the plot uses an equirectangular projection, so
+   * `unprojectFromUnitSquare` is its true inverse. A tap really does mean the place
+   * it looks like it means.
+   */
+  const onPlotPress = (event: GestureResponderEvent) => {
+    if (!pinMode || !onPickLocation || size <= 0) return;
+
+    const { locationX, locationY } = event.nativeEvent;
+    onPickLocation(
+      unprojectFromUnitSquare(
+        { latitude, longitude },
+        { x: locationX / size, y: locationY / size },
+        radiusMetres,
+      ),
+    );
+  };
+
+  const pinOffset =
+    pinLocation && size > 0
+      ? projectToUnitSquare({ latitude, longitude }, pinLocation, radiusMetres)
+      : null;
+
+  const Plot = pinMode ? Pressable : View;
 
   return (
     <View style={{ gap: theme.spacing.sm }}>
-      <View
+      <Plot
         onLayout={onLayout}
-        accessibilityRole="summary"
+        onPress={pinMode ? onPlotPress : undefined}
+        accessibilityRole={pinMode ? 'button' : 'summary'}
         accessibilityLabel={summaryLabel}
+        accessibilityHint={pinMode ? 'Places the pin where you tap.' : undefined}
         style={[
           styles.plot,
           {
             backgroundColor: theme.colors.surfaceMuted,
-            borderColor: theme.colors.border,
+            borderColor: pinMode ? theme.colors.primary : theme.colors.border,
             borderRadius: theme.radius.lg,
           },
         ]}
@@ -133,13 +179,32 @@ export function GymMapView({
                 onPress={onSelectGym}
               />
             ))}
+
+            {/* The candidate location for a new gym. Coral rather than green so it
+                is obviously not one of the existing gyms yet. */}
+            {pinOffset ? (
+              <View
+                accessibilityElementsHidden
+                importantForAccessibility="no"
+                style={[
+                  styles.dropPin,
+                  {
+                    left: clamp(pinOffset.x, 0, 1) * size - PIN_SIZE / 2,
+                    top: clamp(pinOffset.y, 0, 1) * size - PIN_SIZE / 2,
+                    backgroundColor: theme.colors.accent,
+                    borderColor: theme.colors.surface,
+                  },
+                ]}
+              />
+            ) : null}
           </>
         ) : null}
-      </View>
+      </Plot>
 
       <Text variant="caption" tone="subtle">
-        Schematic view: distances and directions are to scale, streets are not shown. Numbers match
-        the list below.
+        {pinMode
+          ? 'Tap the plot to place your gym. Distances and directions are to scale, so the position is exact even though streets are not drawn.'
+          : 'Schematic view: distances and directions are to scale, streets are not shown. Numbers match the list below.'}
       </Text>
     </View>
   );
@@ -317,5 +382,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
+  },
+  dropPin: {
+    position: 'absolute',
+    width: PIN_SIZE,
+    height: PIN_SIZE,
+    borderRadius: PIN_SIZE / 2,
+    borderWidth: 3,
   },
 });

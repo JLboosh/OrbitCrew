@@ -12,10 +12,9 @@ import {
   useMyCrews,
   useMyPresence,
   useMyProfile,
-  useRecentSessions,
-  useStartSession,
+  useRecentWorkouts,
 } from '@/api';
-import { ActiveChallenges } from '@/components/challenges';
+import { ActiveChallenges, DailyChallengeCard } from '@/components/challenges';
 import {
   Avatar,
   AvatarStack,
@@ -31,6 +30,7 @@ import {
   Text,
   Wordmark,
 } from '@/components/ui';
+import { WorkoutSummaryRow } from '@/components/workouts';
 import { useTheme } from '@/theme';
 
 /**
@@ -51,9 +51,8 @@ export default function TodayScreen() {
   const { data: activeSession, isLoading: loadingSession } = useActiveSession();
   const { data: presence } = useMyPresence();
   const { data: memberships } = useMyCrews();
-  const { data: recent } = useRecentSessions(12);
+  const { data: recent } = useRecentWorkouts(12);
 
-  const startSession = useStartSession();
   const checkOut = useCheckOut();
 
   const crew = memberships?.[0]?.crew ?? null;
@@ -75,6 +74,21 @@ export default function TodayScreen() {
       onSeeAll={() => router.push('/challenges')}
       onOpenChallenge={(challengeId) => router.push(`/challenges/${challengeId}`)}
       onStartChallenge={() => router.push('/challenges/new')}
+    />
+  );
+
+  /**
+   * Today's challenge.
+   *
+   * Above the joined-challenges card on purpose: it is the one challenge every
+   * member always has, it asks for one thing, and it is the shortest path from
+   * opening the app to starting a workout.
+   */
+  const dailyCard = (
+    <DailyChallengeCard
+      onOpen={() => router.push('/challenges/daily')}
+      onStartWorkout={() => router.push('/session/new')}
+      compact={theme.isWide}
     />
   );
 
@@ -113,16 +127,18 @@ export default function TodayScreen() {
       onPress={() => router.push('/session/active')}
     />
   ) : (
+    /*
+     * Opens the workout-type picker rather than creating a session immediately.
+     * The flow is Start → choose type → choose exercises, and a session created
+     * before the type is known could never be labelled retrospectively without
+     * guessing. Backing out of the picker also creates nothing.
+     */
     <Button
-      label="Start a session"
+      label="Start a workout"
       icon="play"
       size="large"
       fullWidth={!theme.isWide}
-      loading={startSession.isPending}
-      onPress={async () => {
-        await startSession.mutateAsync({});
-        router.push('/session/active');
-      }}
+      onPress={() => router.push('/session/new')}
     />
   );
 
@@ -222,15 +238,11 @@ export default function TodayScreen() {
         />
       ) : (
         <Button
-          label="Start a session"
+          label="Start a workout"
           icon="play"
           size="large"
           fullWidth
-          loading={startSession.isPending}
-          onPress={async () => {
-            await startSession.mutateAsync({});
-            router.push('/session/active');
-          }}
+          onPress={() => router.push('/session/new')}
         />
       )}
 
@@ -293,29 +305,37 @@ export default function TodayScreen() {
     </Card>
   );
 
+  /**
+   * Recent workouts, labelled by what was trained.
+   *
+   * "🦵 Legs · 58m · 6 exercises" rather than "Tuesday, Sep 15 · 58 min". The date
+   * alone answers a question nobody was asking; the type is what makes a history
+   * list worth opening, and it is also what tells you what to train next.
+   */
   const recentCard = (
     <Card flush style={{ paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.sm }}>
       <View style={{ paddingTop: theme.spacing.md }}>
-        <SectionHeader title="Recent sessions" />
+        <SectionHeader
+          title="Recent workouts"
+          actionLabel={recent && recent.length > 4 ? 'All' : undefined}
+          onAction={recent && recent.length > 4 ? () => router.push('/(tabs)/progress') : undefined}
+        />
       </View>
       {recent?.length ? (
-        recent.slice(0, 4).map((session, index) => (
-          <ListRow
-            key={session.id}
-            icon="barbell-outline"
-            title={new Date(session.started_at).toLocaleDateString([], {
-              weekday: 'long',
-              month: 'short',
-              day: 'numeric',
-            })}
-            subtitle={formatDuration(session.duration_seconds)}
-            divider={index < Math.min(recent.length, 4) - 1}
-          />
-        ))
+        recent
+          .slice(0, 4)
+          .map((workout, index) => (
+            <WorkoutSummaryRow
+              key={workout.id}
+              workout={workout}
+              divider={index < Math.min(recent.length, 4) - 1}
+              onPress={(sessionId) => router.push(`/session/${sessionId}`)}
+            />
+          ))
       ) : (
         <View style={{ paddingBottom: theme.spacing.md }}>
           <Text variant="caption" tone="muted">
-            No sessions yet. Your first one starts whenever you are ready.
+            No workouts yet. Your first one starts whenever you are ready.
           </Text>
         </View>
       )}
@@ -340,6 +360,7 @@ export default function TodayScreen() {
 
           <View style={{ flex: 1, gap: theme.spacing.lg, minWidth: 280 }}>
             {readyCard}
+            {dailyCard}
             {challengesCard}
             <Card>
               <SectionHeader
@@ -423,6 +444,7 @@ export default function TodayScreen() {
         </Card>
       ) : null}
 
+      {dailyCard}
       {challengesCard}
       {leaderboardCard}
       {recentCard}
@@ -471,15 +493,6 @@ function formatClock(totalSeconds: number): string {
   const s = totalSeconds % 60;
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${pad(h)}:${pad(m)}:${pad(s)}`;
-}
-
-function formatDuration(seconds: number | null): string {
-  if (seconds == null) return 'In progress';
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes} min`;
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return m === 0 ? `${h} h` : `${h} h ${m} min`;
 }
 
 function greeting(): string {

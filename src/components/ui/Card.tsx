@@ -19,11 +19,17 @@ export interface CardProps extends ViewProps {
  * The design distinguishes surfaces mainly through the off-white canvas versus
  * white cards, so the shadow is intentionally subtle. `feature` swaps in the
  * tinted panel used for the hero and crew-goal cards.
+ *
+ * IN DARK MODE THE SHADOW IS REPLACED BY A HAIRLINE BORDER. A soft dark shadow on
+ * a near-black canvas is invisible, which left every card edge-to-edge with the
+ * background and the whole screen looking like one flat sheet. A border is how
+ * elevation is expressed when there is no light to cast.
  */
 export function Card({ flush = false, variant = 'plain', style, ...rest }: CardProps) {
   const theme = useTheme();
 
   const background = variant === 'feature' ? theme.colors.gradientStart : theme.colors.surface;
+  const outlined = variant === 'outline' || theme.isDark;
 
   return (
     <View
@@ -34,7 +40,7 @@ export function Card({ flush = false, variant = 'plain', style, ...rest }: CardP
           padding: flush ? 0 : theme.spacing.lg,
           gap: flush ? 0 : theme.spacing.sm,
         },
-        variant === 'outline'
+        outlined
           ? { borderWidth: StyleSheet.hairlineWidth, borderColor: theme.colors.border }
           : theme.shadow.card,
         style,

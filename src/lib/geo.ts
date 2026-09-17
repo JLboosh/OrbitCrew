@@ -101,6 +101,40 @@ export function projectToUnitSquare(
 }
 
 /**
+ * The inverse of `projectToUnitSquare`.
+ *
+ * Turns a point on the schematic plot back into a coordinate, which is what lets
+ * the native map be a pin-dropper for adding a gym without a native map module.
+ * The projection is exact rather than an approximation of a tile map, so inverting
+ * it is exact too: a tap 40% of the way to the edge of a 5 km plot is genuinely
+ * 2 km from the origin in that direction.
+ */
+export function unprojectFromUnitSquare(
+  origin: LatLng,
+  point: { x: number; y: number },
+  radiusMetres: number,
+): LatLng {
+  const safeRadius = radiusMetres > 0 ? radiusMetres : 1;
+
+  const latRadians = (origin.latitude * Math.PI) / 180;
+  const metresPerDegreeLat = (Math.PI / 180) * EARTH_RADIUS_METRES;
+  const metresPerDegreeLon = metresPerDegreeLat * Math.cos(latRadians);
+
+  const eastMetres = (point.x - 0.5) * 2 * safeRadius;
+  // Screen y grows downward, matching the negation in the forward projection.
+  const northMetres = (0.5 - point.y) * 2 * safeRadius;
+
+  return {
+    latitude: origin.latitude + northMetres / metresPerDegreeLat,
+    // Guarded: at the poles cos(latitude) approaches zero and this would diverge.
+    longitude:
+      metresPerDegreeLon === 0
+        ? origin.longitude
+        : origin.longitude + eastMetres / metresPerDegreeLon,
+  };
+}
+
+/**
  * Basic plausibility check for a coordinate pair.
  *
  * Distance is never computed on the client: `nearby_gyms` returns true spheroidal

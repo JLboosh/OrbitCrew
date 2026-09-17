@@ -1,0 +1,27 @@
+# Line endings
+#
+# WHY THIS IS HERE
+# ----------------
+# Prettier is configured with `endOfLine: "lf"`, and `npm run lint` runs Prettier
+# as an ESLint rule with `--max-warnings=0`. On Windows, a clone with the default
+# `core.autocrlf=true` checks every file out with CRLF, so `lint` failed on all
+# ~60 source files with "Delete `␍`" before a single line of code was written.
+# CI on Linux passed, which is what let it go unnoticed.
+#
+# `eol=lf` pins the WORKING TREE to LF on every platform, so the bytes on disk
+# match what Prettier expects regardless of a contributor's git configuration.
+# Nothing about the committed content changes: git already normalised these files
+# to LF on commit.
+* text=auto eol=lf
+
+# Binary assets must never be line-ending normalised.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary

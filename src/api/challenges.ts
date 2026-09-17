@@ -4,7 +4,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { parseChallengeRule, type ChallengeRuleType } from '@/lib/challengeRules';
 import { queryKeys } from '@/lib/queryClient';
 import { supabase } from '@/lib/supabase';
-import type { Database, Json } from '@/types/database.types';
+import type { Database, Json } from '@/types/database';
 
 export type ChallengeTemplate = Database['public']['Tables']['challenge_templates']['Row'];
 export type Challenge = Database['public']['Tables']['challenges']['Row'];

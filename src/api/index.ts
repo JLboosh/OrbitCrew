@@ -48,21 +48,35 @@ export {
   useCheckIn,
   useCheckOut,
   useCreateCustomExercise,
+  useDeleteCustomExercise,
   useDeleteSet,
   useEndSession,
   useExercises,
+  useFinishWorkout,
   useLogSet,
   useMyPresence,
   useRecentSessions,
+  useRecentWorkouts,
   useRemoveSessionExercise,
+  useSession,
   useStartSession,
+  useUpdateSessionExerciseNotes,
   useUpdateSessionNotes,
+  useUpdateSet,
+  useUpdateWorkoutCategories,
+  type CreateCustomExerciseInput,
   type Exercise,
+  type ExerciseEquipment,
+  type ExerciseSummary,
+  type FinishedWorkout,
   type LogSetInput,
+  type MuscleGroup,
   type Session,
   type SessionDetail,
+  type SessionExercise,
   type SetRow,
   type WeightUnit,
+  type WorkoutSummary,
 } from './sessions';
 
 // Friends and crews
@@ -120,14 +134,18 @@ export {
   type LeaderboardRow,
 } from './leaderboard';
 
-// Gyms, nearby search, live presence
+// Gyms, nearby search, live presence, member submissions
 export {
+  useCreateGym,
   useGymFriendVisits,
   useGymPresence,
   useGymPresenceByGymId,
   useGymSearch,
   useMyGymVisitPattern,
   useNearbyGyms,
+  useSimilarGyms,
+  type CreateGymInput,
+  type DuplicateCheckInput,
   type GymFriendVisits,
   type GymPresenceByGymId,
   type GymPresenceMember,
@@ -135,6 +153,7 @@ export {
   type MyGymVisitPattern,
   type NamedVisitor,
   type NearbyGym,
+  type SimilarGymRow,
 } from './gyms';
 
 // Stats and progress
@@ -156,6 +175,18 @@ export {
   type WeekBucket,
   type WeeklySummaryRow,
 } from './progress';
+
+// The daily challenge. Separate from `challenges.ts` because it is a get-or-create
+// per member per day rather than something anyone browses or joins.
+export {
+  DAILY_WINDOW_DAYS,
+  isDailyChallenge,
+  useDailyChallenge,
+  useRefreshDailyChallenge,
+  type DailyChallengeDay,
+  type DailyChallengeState,
+  type DailyChallengeToday,
+} from './dailyChallenge';
 
 // Challenges
 export {

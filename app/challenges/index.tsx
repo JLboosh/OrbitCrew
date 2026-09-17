@@ -1,8 +1,8 @@
 import { useRouter } from 'expo-router';
 import { View } from 'react-native';
 
-import { useMyChallenges, useVisibleCrewChallenges, type Challenge } from '@/api';
-import { ChallengeCard } from '@/components/challenges';
+import { isDailyChallenge, useMyChallenges, useVisibleCrewChallenges, type Challenge } from '@/api';
+import { ChallengeCard, DailyChallengeCard } from '@/components/challenges';
 import { Button, Card, Screen, Text } from '@/components/ui';
 import { challengeStatus } from '@/lib/challengeRules';
 import { useTheme } from '@/theme';
@@ -24,8 +24,18 @@ export default function ChallengesScreen() {
   const joined = mine ?? [];
   const joinedIds = new Set(joined.map((entry) => entry.challenge_id));
 
+  /**
+   * Daily challenges are excluded from these lists and given their own card.
+   *
+   * There is one per member per day, so after a fortnight they would be the entire
+   * "Finished" section and would push every real challenge off the screen. The card
+   * at the top shows today's plus a seven-day recap, which is all of that
+   * information in a tenth of the space.
+   */
   const withChallenge = joined.flatMap((entry) =>
-    entry.challenge ? [{ challenge: entry.challenge, participation: entry }] : [],
+    entry.challenge && !isDailyChallenge(entry.challenge)
+      ? [{ challenge: entry.challenge, participation: entry }]
+      : [],
   );
 
   const active = withChallenge
@@ -46,6 +56,11 @@ export default function ChallengesScreen() {
 
   return (
     <Screen title="Challenges" subtitle="Small commitments, kept visible.">
+      <DailyChallengeCard
+        onOpen={() => router.push('/challenges/daily')}
+        onStartWorkout={() => router.push('/session/new')}
+      />
+
       <Button
         label="Start a challenge"
         size="large"
@@ -96,10 +111,10 @@ export default function ChallengesScreen() {
 
       {!isLoading && active.length === 0 && joinable.length === 0 ? (
         <Card>
-          <Text variant="subheading">Nothing running</Text>
+          <Text variant="subheading">Nothing else running</Text>
           <Text variant="caption" tone="muted">
-            A challenge is a nudge you choose, not a target someone sets for you. Consistency over
-            four weeks is a good first one.
+            Beyond today&apos;s challenge above, a challenge is a nudge you choose rather than a
+            target someone sets for you. Consistency over four weeks is a good first one.
           </Text>
         </Card>
       ) : null}

@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/auth/AuthProvider';
 import { queryKeys } from '@/lib/queryClient';
 import { supabase } from '@/lib/supabase';
-import type { Database } from '@/types/database.types';
+import type { Database } from '@/types/database';
 
 export type RecordType = Database['public']['Enums']['record_type'];
 

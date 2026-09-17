@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/auth/AuthProvider';
 import { queryKeys } from '@/lib/queryClient';
 import { supabase } from '@/lib/supabase';
-import type { Database } from '@/types/database.types';
+import type { Database } from '@/types/database';
 
 export type Crew = Database['public']['Tables']['crews']['Row'];
 export type CrewMember = Database['public']['Tables']['crew_members']['Row'];

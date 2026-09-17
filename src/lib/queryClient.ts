@@ -40,6 +40,13 @@ function isClientError(error: unknown): boolean {
  *
  * Centralised so cache invalidation cannot silently miss a key because two
  * modules spelled it differently.
+ *
+ * A NOTE ON OWNERSHIP. Most keys here say "mine" without saying whose —
+ * `myChallenges()`, `activeSession()`, `presence()`, `personalRecords()`. That is
+ * only safe because `AuthProvider` clears this client whenever the signed-in
+ * member changes; without that, a second sign-in reads the first member's rows
+ * from cache. See the comment on that effect before adding another key of this
+ * shape, and do not remove the clear.
  */
 export const queryKeys = {
   profile: (userId: string) => ['profile', userId] as const,
@@ -80,6 +87,9 @@ export const queryKeys = {
   nearbyGyms: (latitude: number, longitude: number, radiusMetres: number) =>
     ['gyms', 'nearby', latitude.toFixed(3), longitude.toFixed(3), radiusMetres] as const,
   gymSearch: (query: string) => ['gyms', 'search', query] as const,
+  /** Possible duplicates for a gym about to be submitted. */
+  similarGyms: (name: string, latitude: number, longitude: number) =>
+    ['gyms', 'similar', name, latitude.toFixed(4), longitude.toFixed(4)] as const,
   gymPresence: (gymId: string) => ['gym', gymId, 'presence'] as const,
   gymFriendVisits: (gymId: string) => ['gym', gymId, 'friend-visits'] as const,
   gymMyVisits: (gymId: string) => ['gym', gymId, 'my-visits'] as const,
@@ -92,6 +102,14 @@ export const queryKeys = {
 
   // Challenges.
   challengeTemplates: () => ['challenges', 'templates'] as const,
+  /**
+   * Today's challenge, keyed by the member's LOCAL day.
+   *
+   * The day is part of the key so that crossing midnight produces a cache miss
+   * and the next day's challenge is fetched, rather than yesterday's being served
+   * from cache until `gcTime` expires.
+   */
+  dailyChallenge: (dayKey: string) => ['challenges', 'daily', dayKey] as const,
   myChallenges: () => ['challenges', 'mine'] as const,
   joinableChallenges: () => ['challenges', 'joinable'] as const,
   challenge: (challengeId: string) => ['challenges', challengeId] as const,

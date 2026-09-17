@@ -9,4 +9,13 @@ export {
   typography,
   WIDE_BREAKPOINT,
 } from './tokens';
-export { avatarColor, ThemeProvider, useTheme, type Theme } from './ThemeProvider';
+export {
+  avatarColor,
+  readableTextOn,
+  ThemeProvider,
+  useAppearance,
+  useTheme,
+  type Appearance,
+  type Theme,
+  type ThemeMode,
+} from './ThemeProvider';

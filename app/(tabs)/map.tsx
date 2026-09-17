@@ -141,6 +141,30 @@ export default function MapScreen() {
         </Text>
       )}
 
+      {/*
+        Adding a gym.
+        Placed under the map rather than in the header because it is the answer to
+        a question the map has just raised — "mine isn't here" — and the current
+        map centre is handed over so the pin starts where the member was looking
+        instead of back on campus.
+      */}
+      <Button
+        label="Add a gym"
+        icon="add-circle-outline"
+        variant="secondary"
+        fullWidth
+        accessibilityHint="For a gym that is missing from the map."
+        onPress={() =>
+          router.push({
+            pathname: '/gym/new',
+            params: {
+              lat: String(queryOrigin.latitude),
+              lng: String(queryOrigin.longitude),
+            },
+          })
+        }
+      />
+
       {/* Location is an offer, not a gate: the map above already works without
           it. Asked for on tap so the prompt is always something the member
           initiated. */}

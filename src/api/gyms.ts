@@ -1,12 +1,13 @@
-import { useQueries, useQuery } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '@/auth/AuthProvider';
 import { isValidLatLng, type LatLng } from '@/lib/geo';
 import { queryKeys } from '@/lib/queryClient';
 import { supabase } from '@/lib/supabase';
-import type { Database, Json } from '@/types/database.types';
+import type { Database, Json, SimilarGymRow } from '@/types/database';
 
 export type GymRow = Database['public']['Tables']['gyms']['Row'];
+export type { SimilarGymRow };
 
 /**
  * Gym discovery, live presence, and friend history.
@@ -340,4 +341,122 @@ export function useGymPresenceByGymId(gymIds: string[]) {
   });
 
   return { data: details, isLoading: occupied.isLoading };
+}
+
+// ---------------------------------------------------------------------------
+// Member-submitted gyms
+// ---------------------------------------------------------------------------
+
+export interface DuplicateCheckInput {
+  name: string;
+  latitude: number;
+  longitude: number;
+  address?: string | null;
+}
+
+/**
+ * Possible duplicates for a gym the member is about to add.
+ *
+ * WHY THE CHECK RUNS BEFORE THE WRITE AND NOT ONLY INSIDE IT
+ * ---------------------------------------------------------
+ * `create_user_gym` also refuses a probable duplicate, so the database is what
+ * actually guarantees the directory stays clean. But a refusal is a dead end: the
+ * member has typed a name, dropped a pin, and gets told no. Asking first turns that
+ * into a choice — "GoodLife Fitness is already here, 40 m away. Open it, or add
+ * yours anyway?" — which is both a better outcome and the outcome that actually
+ * prevents duplicates, because most people take the existing gym.
+ *
+ * Debounced by the caller through `enabled`, not here: whether the name is
+ * complete enough to check is a UI judgement.
+ */
+export function useSimilarGyms(input: DuplicateCheckInput | null) {
+  const { user } = useAuth();
+
+  const ready =
+    input !== null &&
+    input.name.trim().length >= 2 &&
+    isValidLatLng({ latitude: input.latitude, longitude: input.longitude });
+
+  return useQuery({
+    queryKey: queryKeys.similarGyms(
+      ready ? input.name.trim().toLowerCase() : '',
+      ready ? input.latitude : 0,
+      ready ? input.longitude : 0,
+    ),
+    enabled: ready && Boolean(user?.id),
+    staleTime: 60_000,
+    queryFn: async (): Promise<SimilarGymRow[]> => {
+      const { data, error } = await supabase.rpc('find_similar_gyms', {
+        p_name: input!.name.trim(),
+        p_latitude: input!.latitude,
+        p_longitude: input!.longitude,
+        p_address: input!.address?.trim() || undefined,
+        p_limit: 5,
+      });
+      if (error) throw error;
+      return (data ?? []) as SimilarGymRow[];
+    },
+  });
+}
+
+export interface CreateGymInput {
+  name: string;
+  latitude: number;
+  longitude: number;
+  address?: string | null;
+  city?: string | null;
+  countryCode?: string | null;
+  description?: string | null;
+  website?: string | null;
+  /** Absolute http(s) link to a photo. */
+  imageUrl?: string | null;
+  /**
+   * Set only after the member has been shown a possible duplicate and chosen to
+   * continue. The server refuses otherwise, so this cannot be skipped by a UI that
+   * forgets to ask.
+   */
+  confirmPossibleDuplicate?: boolean;
+}
+
+/**
+ * Adds a gym to the shared directory.
+ *
+ * Goes through the `create_user_gym` RPC rather than an INSERT because
+ * `public.gyms` has no INSERT policy, by design: it is a directory every member
+ * reads, so a client-side write would let one account vandalise it for everyone.
+ * The function forces `source = 'user'`, records who submitted it, validates every
+ * field, rate-limits submissions, and refuses duplicates.
+ *
+ * The gym is a normal gym the moment this returns — the same row type, visible to
+ * `nearby_gyms`, rateable, check-in-able, and usable as a session's gym — because
+ * it IS a normal row in the same table. Nothing downstream distinguishes it except
+ * the `source` column, which the UI shows as provenance.
+ */
+export function useCreateGym() {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: CreateGymInput): Promise<string> => {
+      const { data, error } = await supabase.rpc('create_user_gym', {
+        p_name: input.name.trim(),
+        p_latitude: input.latitude,
+        p_longitude: input.longitude,
+        p_address: input.address?.trim() || undefined,
+        p_city: input.city?.trim() || undefined,
+        p_country_code: input.countryCode?.trim() || undefined,
+        p_description: input.description?.trim() || undefined,
+        p_website: input.website?.trim() || undefined,
+        p_image_url: input.imageUrl?.trim() || undefined,
+        p_confirm_possible_duplicate: input.confirmPossibleDuplicate ?? false,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      // Every cached radius and origin is now potentially wrong, so the whole
+      // gyms namespace goes rather than one key. Cheap: the results are static
+      // enough that a refetch is a single indexed query.
+      client.invalidateQueries({ queryKey: ['gyms'] });
+    },
+  });
 }

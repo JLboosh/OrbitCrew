@@ -1,373 +1,374 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { TextInput, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import {
   useActiveSession,
   useAddSessionExercise,
-  useDeleteSet,
-  useEndSession,
-  useExercises,
+  useFinishWorkout,
   useGym,
   useLogSet,
   useMyProfile,
-  useRemoveSessionExercise,
-  type SessionDetail,
+  useRefreshDailyChallenge,
+  useUpdateSessionNotes,
+  useUpdateWorkoutCategories,
+  type Exercise,
+  type FinishedWorkout,
 } from '@/api';
-import { Button, Card, Screen, Text, useConfirm } from '@/components/ui';
+import { Button, Card, Screen, Text, TextField, useConfirm } from '@/components/ui';
+import {
+  ExerciseBlock,
+  ExercisePicker,
+  WorkoutTypePicker,
+  formatDuration,
+} from '@/components/workouts';
+import { errorMessage } from '@/lib/errors';
+import { defaultSetValues } from '@/lib/exerciseEntry';
+import {
+  categoryEmoji,
+  describeCategories,
+  knownCategories,
+  type WorkoutCategoryKey,
+} from '@/lib/workoutTypes';
 import { useTheme } from '@/theme';
 
 /**
- * Active session — capture the workout with as little friction as possible.
+ * The active workout.
  *
- * Design constraints specific to this screen: it is used standing up, one-handed,
- * between sets, often with sweat on the screen. So touch targets are large, the
- * numeric keypad is used for weight and reps, and the previous set's values
- * pre-fill the next one, since sets are usually repeated.
+ * WHAT CHANGED AND WHY
+ * --------------------
+ * This screen used to show, for every exercise at once: a list of logged sets, a
+ * weight field, a reps field, a warm-up toggle, a "Log set" button, and a "Remove"
+ * button — then an exercise search across the entire library underneath. Used
+ * standing up between sets, that is too much to parse.
+ *
+ * Now it is a title, a clock, a list of exercises with their sets, and two
+ * actions. Adding a set is one tap and copies the previous set's numbers; the
+ * exercise picker is a step you enter and leave rather than a permanent fixture;
+ * notes are there when wanted and invisible when not.
+ *
+ * The constraints that shaped the original still hold: used one-handed, sweaty
+ * screen, low attention. So targets stay large, numeric keypads are used, and
+ * nothing is ever lost — every edit writes immediately, so closing the app
+ * mid-workout costs nothing.
  */
 export default function ActiveSessionScreen() {
   const router = useRouter();
-
+  const theme = useTheme();
   const confirm = useConfirm();
-  const { data: session, isLoading } = useActiveSession();
+
+  const { data: session, isLoading, isError, error, refetch } = useActiveSession();
   const { data: profile } = useMyProfile();
-  const endSession = useEndSession();
+
+  const finish = useFinishWorkout();
+  const refreshDaily = useRefreshDailyChallenge();
+  const updateNotes = useUpdateSessionNotes();
+  const updateCategories = useUpdateWorkoutCategories();
+  const addExercise = useAddSessionExercise();
+  const logSet = useLogSet();
+
+  const [picking, setPicking] = useState(false);
+  const [editingType, setEditingType] = useState(false);
+  const [notesExpanded, setNotesExpanded] = useState(false);
+  const [finished, setFinished] = useState<FinishedWorkout | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  /**
+   * The notes field, DERIVED rather than synchronised.
+   *
+   * `null` means "the member has not typed anything yet", so the saved value shows
+   * through. An effect copying `session.notes` into state would be a second source
+   * of truth for the same string, and the version that fights hardest wins — which
+   * in practice means a background refetch overwriting half-typed text.
+   */
+  const [notesDraft, setNotesDraft] = useState<string | null>(null);
+  const savedNotes = session?.notes ?? '';
+  const notes = notesDraft ?? savedNotes;
+  // Open automatically when there is something to show, without an effect.
+  const notesOpen = notesExpanded || savedNotes.length > 0;
+
+  const entries = useMemo(
+    () => [...(session?.session_exercises ?? [])].sort((a, b) => a.order_index - b.order_index),
+    [session?.session_exercises],
+  );
+
+  const preferredUnit = profile?.weight_unit ?? 'lb';
+
+  // The completion summary. Shown after the session row is gone, which is why it
+  // is checked before the "no active session" branch below.
+  if (finished) {
+    return <WorkoutComplete summary={finished} onDone={() => router.replace('/(tabs)')} />;
+  }
 
   if (isLoading) {
     return (
-      <Screen title="Session">
+      <Screen title="Workout">
         <Text tone="muted">Loading…</Text>
+      </Screen>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Screen title="Workout">
+        <Card>
+          <Text variant="subheading">Could not load your workout</Text>
+          <Text variant="caption" tone="muted">
+            {errorMessage(error, 'Something went wrong reading the session. Nothing was lost.')}
+          </Text>
+          <Button label="Try again" variant="secondary" onPress={() => refetch()} />
+        </Card>
       </Screen>
     );
   }
 
   if (!session) {
     return (
-      <Screen title="No active session" subtitle="Start one from the Today screen.">
-        <Button label="Back to Today" onPress={() => router.replace('/(tabs)')} />
+      <Screen title="No workout in progress" subtitle="Start one and pick what you are training.">
+        <Button
+          label="Start a workout"
+          icon="play"
+          size="large"
+          fullWidth
+          onPress={() => router.replace('/session/new')}
+        />
+        <Button label="Back to Today" variant="ghost" onPress={() => router.replace('/(tabs)')} />
       </Screen>
     );
   }
 
-  const preferredUnit = profile?.weight_unit ?? 'lb';
+  const categories = session.workout_categories ?? [];
+  const title = `${categoryEmoji(categories)} ${describeCategories(categories, 'Workout')}`;
+
+  const addExerciseToSession = async (exercise: Exercise) => {
+    setActionError(null);
+    try {
+      const created = await addExercise.mutateAsync({
+        sessionId: session.id,
+        exerciseId: exercise.id,
+        orderIndex: entries.length,
+      });
+
+      // Seeds the first set immediately. An exercise with no sets is a row the
+      // member has to act on twice before recording anything.
+      const defaults = defaultSetValues(exercise);
+      await logSet.mutateAsync({
+        sessionExerciseId: created.id,
+        setIndex: 0,
+        weight: defaults.weight,
+        weightUnit: preferredUnit,
+        reps: defaults.reps,
+        durationSeconds: defaults.durationSeconds,
+        isWarmup: false,
+      });
+
+      setPicking(false);
+    } catch (err) {
+      setActionError(errorMessage(err, 'Could not add that exercise.'));
+    }
+  };
+
+  const onFinish = async () => {
+    const loggedSets = entries.reduce((total, entry) => total + entry.sets.length, 0);
+
+    const confirmed = await confirm({
+      title: 'Finish workout?',
+      message:
+        loggedSets === 0
+          ? 'You have not logged any sets. The workout will still be recorded.'
+          : `${loggedSets} ${loggedSets === 1 ? 'set' : 'sets'} across ${entries.length} ${
+              entries.length === 1 ? 'exercise' : 'exercises'
+            }. Everything is already saved.`,
+      confirmLabel: 'Finish',
+      cancelLabel: 'Keep going',
+    });
+    if (!confirmed) return;
+
+    setActionError(null);
+    try {
+      const summary = await finish.mutateAsync(session);
+      // Pushes today's challenge forward straight away rather than leaving the
+      // member to wonder why it still says 0 of 1.
+      refreshDaily.mutate();
+      setFinished(summary);
+    } catch (err) {
+      setActionError(errorMessage(err, 'Could not finish the workout. Your sets are saved.'));
+    }
+  };
 
   return (
-    <Screen title="Session">
-      <Card>
-        <ElapsedTimer startedAt={session.started_at} />
+    <Screen title={title} subtitle={undefined}>
+      {/* Clock and context, in one compact card. */}
+      <Card variant="feature" style={{ gap: theme.spacing.sm }}>
+        <View style={styles.between}>
+          <ElapsedTimer startedAt={session.started_at} />
+          <Button
+            label="Change type"
+            variant="ghost"
+            size="small"
+            accessibilityLabel="Change what you are training"
+            onPress={() => setEditingType((open) => !open)}
+          />
+        </View>
         <GymLine gymId={session.gym_id} />
-        <Text variant="caption" tone="subtle">
-          Sessions count toward your crew goal once they pass the crew&apos;s minimum length.
+      </Card>
+
+      {editingType ? (
+        <Card>
+          <Text variant="subheading" heading>
+            Change what you are training
+          </Text>
+          <WorkoutTypePicker
+            selected={knownCategories(categories).map((category) => category.key)}
+            onChange={(next: WorkoutCategoryKey[]) =>
+              updateCategories.mutate({ sessionId: session.id, workoutCategories: next })
+            }
+          />
+          <Button label="Done" variant="secondary" onPress={() => setEditingType(false)} />
+        </Card>
+      ) : null}
+
+      {/* Exercises. The substance of the screen. */}
+      <Card style={{ gap: theme.spacing.lg }}>
+        <Text variant="heading" heading>
+          Exercises
+        </Text>
+
+        {entries.length === 0 ? (
+          <Text variant="caption" tone="muted">
+            Nothing added yet. Add your first exercise below — only the ones that fit{' '}
+            {describeCategories(categories, 'your workout').toLowerCase()} are shown.
+          </Text>
+        ) : (
+          entries.map((entry) => (
+            <ExerciseBlock key={entry.id} entry={entry} preferredUnit={preferredUnit} />
+          ))
+        )}
+
+        {!picking ? (
+          <Button
+            label="+ Add exercise"
+            variant="secondary"
+            fullWidth
+            onPress={() => setPicking(true)}
+          />
+        ) : null}
+      </Card>
+
+      {picking ? (
+        <ExercisePicker
+          categories={categories}
+          alreadyAddedIds={entries.flatMap((entry) => (entry.exercise ? [entry.exercise.id] : []))}
+          onPick={addExerciseToSession}
+          footer={<Button label="Done adding" variant="ghost" onPress={() => setPicking(false)} />}
+        />
+      ) : null}
+
+      {/* Session-wide notes, folded away until wanted. */}
+      {notesOpen ? (
+        <Card>
+          <TextField
+            label="Workout notes"
+            value={notes}
+            onChangeText={setNotesDraft}
+            onBlur={() => {
+              if (savedNotes === notes.trim()) return;
+              updateNotes.mutate({ sessionId: session.id, notes });
+            }}
+            placeholder="How it felt, what to change next time"
+            multiline
+            maxLength={2000}
+          />
+        </Card>
+      ) : (
+        <Button
+          label="+ Add workout notes"
+          variant="ghost"
+          onPress={() => setNotesExpanded(true)}
+        />
+      )}
+
+      <Button
+        label="Finish workout"
+        size="large"
+        fullWidth
+        loading={finish.isPending}
+        onPress={onFinish}
+      />
+
+      {actionError ? (
+        <Text variant="caption" tone="danger" accessibilityLiveRegion="polite">
+          {actionError}
+        </Text>
+      ) : null}
+
+      <Text variant="caption" tone="subtle">
+        Everything saves as you type. Sessions count toward your crew goal once they pass the
+        crew&apos;s minimum length.
+      </Text>
+    </Screen>
+  );
+}
+
+/**
+ * What the member sees the moment they finish.
+ *
+ * The point is to close the loop the app is built around — train, see it counted,
+ * see it reach your crew. So it names what was done, and states plainly which
+ * downstream things have just been updated rather than leaving the member to go
+ * looking for evidence that anything happened.
+ */
+function WorkoutComplete({ summary, onDone }: { summary: FinishedWorkout; onDone: () => void }) {
+  const theme = useTheme();
+
+  const label = describeCategories(summary.workoutCategories, 'Workout');
+  const emoji = categoryEmoji(summary.workoutCategories);
+
+  return (
+    <Screen title="Nice work.">
+      <Card variant="feature" style={{ gap: theme.spacing.md }}>
+        <Text variant="display" heading>
+          {emoji} {label}
+        </Text>
+        <Text variant="metric">
+          {formatDuration(summary.durationSeconds)} ·{' '}
+          {summary.exerciseCount === 1 ? '1 exercise' : `${summary.exerciseCount} exercises`}
+        </Text>
+        <Text variant="body" tone="muted">
+          {summary.setCount === 1 ? '1 set' : `${summary.setCount} sets`} recorded.
         </Text>
       </Card>
 
-      {session.session_exercises
-        ?.slice()
-        .sort((a, b) => a.order_index - b.order_index)
-        .map((entry) => (
-          <ExerciseBlock
-            key={entry.id}
-            entry={entry}
-            preferredUnit={preferredUnit}
-            sessionId={session.id}
-          />
-        ))}
+      <Card>
+        <Text variant="subheading" heading>
+          What this updated
+        </Text>
+        <Text variant="caption" tone="muted">
+          Your session count, training volume, weekly consistency, and any personal records from
+          this workout. Your crew&apos;s weekly goal and the leaderboard count it as soon as it
+          passes their minimum session length.
+        </Text>
+        <Text variant="caption" tone="muted">
+          {summary.rescoredChallengeIds.length > 0
+            ? `${summary.rescoredChallengeIds.length} ${
+                summary.rescoredChallengeIds.length === 1 ? 'challenge' : 'challenges'
+              } rescored, including today's.`
+            : 'Challenge progress is recalculated whenever you open a challenge.'}
+        </Text>
+      </Card>
 
-      <AddExercise sessionId={session.id} nextIndex={session.session_exercises?.length ?? 0} />
-
-      <Button
-        label="End session"
-        size="large"
-        fullWidth
-        loading={endSession.isPending}
-        onPress={async () => {
-          // Uses the themed ConfirmProvider rather than Alert.alert, which is a
-          // no-op on react-native-web and made this button appear broken.
-          const confirmed = await confirm({
-            title: 'End session?',
-            message: 'Your logged sets are already saved.',
-            confirmLabel: 'End session',
-            cancelLabel: 'Keep going',
-          });
-          if (!confirmed) return;
-          await endSession.mutateAsync(session.id);
-          router.replace('/(tabs)');
-        }}
-      />
+      <Button label="Done" size="large" fullWidth onPress={onDone} />
     </Screen>
   );
 }
 
 function GymLine({ gymId }: { gymId: string | null }) {
   const { data: gym } = useGym(gymId ?? undefined);
-  if (!gymId) {
-    return (
-      <Text variant="caption" tone="muted">
-        No gym selected
-      </Text>
-    );
-  }
+
   return (
     <Text variant="caption" tone="muted">
-      {gym?.name ?? 'Loading gym…'}
+      {!gymId ? 'No gym selected' : (gym?.name ?? 'Loading gym…')}
     </Text>
-  );
-}
-
-/** One exercise plus its sets and the entry row for the next set. */
-function ExerciseBlock({
-  entry,
-  preferredUnit,
-  sessionId: _sessionId,
-}: {
-  entry: SessionDetail['session_exercises'][number];
-  preferredUnit: 'lb' | 'kg';
-  sessionId: string;
-}) {
-  const theme = useTheme();
-  const logSet = useLogSet();
-  const deleteSet = useDeleteSet();
-  const removeExercise = useRemoveSessionExercise();
-
-  const sets = useMemo(
-    () => entry.sets.slice().sort((a, b) => a.set_index - b.set_index),
-    [entry.sets],
-  );
-  const lastSet = sets[sets.length - 1];
-
-  // Pre-fill from the previous set: consecutive sets usually repeat the same
-  // weight and reps, so this removes most of the typing.
-  const [weight, setWeight] = useState(() =>
-    lastSet?.weight != null ? String(lastSet.weight) : '',
-  );
-  const [reps, setReps] = useState(() => (lastSet?.reps != null ? String(lastSet.reps) : ''));
-  const [isWarmup, setIsWarmup] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const isWeighted = entry.exercise?.is_weighted ?? true;
-  const canLog = isWeighted ? weight.trim() !== '' || reps.trim() !== '' : reps.trim() !== '';
-
-  const numericInput = {
-    minHeight: theme.minTouchTarget,
-    minWidth: 72,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: theme.radius.md,
-    paddingHorizontal: theme.spacing.md,
-    color: theme.colors.text,
-    backgroundColor: theme.colors.surface,
-    fontSize: 18,
-    textAlign: 'center' as const,
-  };
-
-  return (
-    <Card>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text variant="subheading" heading>
-          {entry.exercise?.name ?? 'Exercise'}
-        </Text>
-        <Button
-          label="Remove"
-          variant="ghost"
-          onPress={() => removeExercise.mutate(entry.id)}
-          accessibilityLabel={`Remove ${entry.exercise?.name ?? 'exercise'} from this session`}
-        />
-      </View>
-
-      {/* Logged sets. */}
-      {sets.length ? (
-        <View style={{ gap: theme.spacing.xs, marginTop: theme.spacing.sm }}>
-          {sets.map((set, index) => (
-            <View
-              key={set.id}
-              accessible
-              accessibilityLabel={describeSet(set, index)}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                paddingVertical: theme.spacing.xs,
-              }}
-            >
-              <Text variant="body" tone="subtle" style={{ width: 24 }}>
-                {index + 1}
-              </Text>
-              <Text variant="body" style={{ flex: 1 }}>
-                {formatSet(set)}
-                {set.is_warmup ? '  ·  warm-up' : ''}
-              </Text>
-              {set.estimated_1rm_kg != null ? (
-                <Text variant="caption" tone="subtle">
-                  ~{formatWeight(Number(set.estimated_1rm_kg), preferredUnit)} 1RM
-                </Text>
-              ) : null}
-              <Button
-                label="✕"
-                variant="ghost"
-                accessibilityLabel={`Delete set ${index + 1}`}
-                onPress={() => deleteSet.mutate(set.id)}
-              />
-            </View>
-          ))}
-        </View>
-      ) : null}
-
-      {/* Next set entry. */}
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'flex-end',
-          gap: theme.spacing.sm,
-          marginTop: theme.spacing.md,
-        }}
-      >
-        {isWeighted ? (
-          <View style={{ gap: theme.spacing.xs }}>
-            <Text variant="caption" tone="muted">
-              Weight ({preferredUnit})
-            </Text>
-            <TextInput
-              value={weight}
-              onChangeText={setWeight}
-              accessibilityLabel={`Weight in ${preferredUnit}`}
-              keyboardType="decimal-pad"
-              style={numericInput}
-            />
-          </View>
-        ) : null}
-
-        <View style={{ gap: theme.spacing.xs }}>
-          <Text variant="caption" tone="muted">
-            Reps
-          </Text>
-          <TextInput
-            value={reps}
-            onChangeText={setReps}
-            accessibilityLabel="Repetitions"
-            keyboardType="number-pad"
-            style={numericInput}
-          />
-        </View>
-
-        <Button
-          label={isWarmup ? 'Warm-up' : 'Working'}
-          variant="ghost"
-          accessibilityLabel={
-            isWarmup
-              ? 'Marked as warm-up. Tap to mark as a working set.'
-              : 'Marked as a working set. Tap to mark as warm-up.'
-          }
-          accessibilityState={{ selected: isWarmup }}
-          onPress={() => setIsWarmup((v) => !v)}
-        />
-      </View>
-
-      <Button
-        label="Log set"
-        fullWidth
-        disabled={!canLog}
-        loading={logSet.isPending}
-        style={{ marginTop: theme.spacing.sm }}
-        onPress={async () => {
-          setError(null);
-          try {
-            await logSet.mutateAsync({
-              sessionExerciseId: entry.id,
-              setIndex: sets.length,
-              weight: weight.trim() === '' ? null : Number(weight),
-              weightUnit: preferredUnit,
-              reps: reps.trim() === '' ? null : Number(reps),
-              isWarmup,
-            });
-            // Warm-up is a per-set decision, so it resets; weight and reps stay
-            // for the next set.
-            setIsWarmup(false);
-          } catch (err) {
-            setError(err instanceof Error ? err.message : 'Could not log that set.');
-          }
-        }}
-      />
-
-      {error ? (
-        <Text variant="caption" tone="danger" accessibilityLiveRegion="polite">
-          {error}
-        </Text>
-      ) : null}
-    </Card>
-  );
-}
-
-/** Exercise picker with a simple name filter. */
-function AddExercise({ sessionId, nextIndex }: { sessionId: string; nextIndex: number }) {
-  const theme = useTheme();
-  const { data: exercises } = useExercises();
-  const addExercise = useAddSessionExercise();
-  const [query, setQuery] = useState('');
-  const [open, setOpen] = useState(false);
-
-  const matches = useMemo(() => {
-    if (!exercises) return [];
-    const q = query.trim().toLowerCase();
-    const pool = q ? exercises.filter((e) => e.name.toLowerCase().includes(q)) : exercises;
-    return pool.slice(0, 12);
-  }, [exercises, query]);
-
-  if (!open) {
-    return <Button label="Add exercise" size="large" fullWidth onPress={() => setOpen(true)} />;
-  }
-
-  return (
-    <Card>
-      <Text variant="subheading" heading>
-        Add exercise
-      </Text>
-      <TextInput
-        value={query}
-        onChangeText={setQuery}
-        accessibilityLabel="Search exercises"
-        placeholder="Search…"
-        placeholderTextColor={theme.colors.textSubtle}
-        autoFocus
-        style={{
-          minHeight: theme.minTouchTarget,
-          borderWidth: 1,
-          borderColor: theme.colors.border,
-          borderRadius: theme.radius.md,
-          paddingHorizontal: theme.spacing.md,
-          color: theme.colors.text,
-          backgroundColor: theme.colors.surface,
-          fontSize: 16,
-          marginTop: theme.spacing.sm,
-        }}
-      />
-
-      <View style={{ marginTop: theme.spacing.sm }}>
-        {matches.map((exercise) => (
-          <Button
-            key={exercise.id}
-            label={exercise.name}
-            variant="ghost"
-            fullWidth
-            onPress={async () => {
-              await addExercise.mutateAsync({
-                sessionId,
-                exerciseId: exercise.id,
-                orderIndex: nextIndex,
-              });
-              setQuery('');
-              setOpen(false);
-            }}
-          />
-        ))}
-        {matches.length === 0 ? (
-          <Text variant="caption" tone="muted">
-            No matches.
-          </Text>
-        ) : null}
-      </View>
-
-      <Button label="Cancel" variant="ghost" onPress={() => setOpen(false)} />
-    </Card>
   );
 }
 
@@ -380,48 +381,26 @@ function ElapsedTimer({ startedAt }: { startedAt: string }) {
   }, []);
 
   const elapsed = Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000));
-  const h = Math.floor(elapsed / 3600);
-  const m = Math.floor((elapsed % 3600) / 60);
-  const s = elapsed % 60;
-  const pad = (n: number) => String(n).padStart(2, '0');
+  const hours = Math.floor(elapsed / 3600);
+  const minutes = Math.floor((elapsed % 3600) / 60);
+  const seconds = elapsed % 60;
+  const pad = (value: number) => String(value).padStart(2, '0');
 
   return (
-    <Text variant="metric" accessibilityLabel={`Elapsed ${m} minutes ${s} seconds`}>
-      {h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`}
+    <Text
+      variant="metric"
+      accessibilityLabel={`Elapsed ${hours > 0 ? `${hours} hours ` : ''}${minutes} minutes ${seconds} seconds`}
+    >
+      {hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`}
     </Text>
   );
 }
 
-function formatSet(set: {
-  weight: number | null;
-  weight_unit: string;
-  reps: number | null;
-  duration_seconds: number | null;
-}): string {
-  if (set.duration_seconds != null) {
-    return `${Math.round(set.duration_seconds / 60)} min`;
-  }
-  const parts: string[] = [];
-  if (set.weight != null) parts.push(`${set.weight} ${set.weight_unit}`);
-  if (set.reps != null) parts.push(`× ${set.reps}`);
-  return parts.join(' ') || '—';
-}
-
-function describeSet(
-  set: {
-    weight: number | null;
-    weight_unit: string;
-    reps: number | null;
-    is_warmup: boolean;
-    duration_seconds: number | null;
+const styles = StyleSheet.create({
+  between: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
   },
-  index: number,
-): string {
-  return `Set ${index + 1}: ${formatSet(set)}${set.is_warmup ? ', warm-up' : ''}`;
-}
-
-/** Converts stored kilograms back to the member's preferred display unit. */
-function formatWeight(kg: number, unit: 'lb' | 'kg'): string {
-  if (unit === 'kg') return `${Math.round(kg)} kg`;
-  return `${Math.round(kg / 0.45359237)} lb`;
-}
+});

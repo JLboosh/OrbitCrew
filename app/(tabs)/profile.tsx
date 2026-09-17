@@ -10,7 +10,7 @@ import {
 } from '@/api';
 import { useAuth } from '@/auth/AuthProvider';
 import { Button, Card, Screen, SettingSwitch, Text, useConfirm } from '@/components/ui';
-import { useTheme } from '@/theme';
+import { useAppearance, useTheme, type ThemeMode } from '@/theme';
 
 /**
  * Profile and privacy.
@@ -163,6 +163,9 @@ export default function ProfileScreen() {
       </Card>
 
       {/* ---------------------------------------------------------------- */}
+      <AppearanceCard />
+
+      {/* ---------------------------------------------------------------- */}
       <Card>
         <Text variant="subheading" heading>
           Units
@@ -210,6 +213,61 @@ export default function ProfileScreen() {
     </Screen>
   );
 }
+
+/**
+ * Light / dark / follow-system.
+ *
+ * Kept out of `@/api` on purpose: the preference is stored on the device, not on
+ * the profile. Dark mode is a property of WHERE you are — a phone in a dimly lit
+ * gym versus a laptop at a desk — so syncing it between devices would be the
+ * wrong behaviour, and a local value also applies on the sign-in screen, before
+ * there is a profile to read.
+ */
+function AppearanceCard() {
+  const theme = useTheme();
+  const { mode, resolved, setMode, hydrated } = useAppearance();
+
+  return (
+    <Card>
+      <Text variant="subheading" heading>
+        Appearance
+      </Text>
+      <Text variant="caption" tone="muted">
+        Dark mode keeps the same colours and contrast ratios, just inverted — progress bars, badges,
+        and charts stay readable either way.
+      </Text>
+
+      <View style={{ flexDirection: 'row', gap: theme.spacing.sm, marginTop: theme.spacing.sm }}>
+        {APPEARANCE_OPTIONS.map((option) => {
+          const selected = mode === option.value;
+          return (
+            <Button
+              key={option.value}
+              label={option.label}
+              variant={selected ? 'primary' : 'ghost'}
+              disabled={!hydrated}
+              accessibilityState={{ selected }}
+              accessibilityHint={option.hint}
+              onPress={() => setMode(option.value)}
+            />
+          );
+        })}
+      </View>
+
+      <Text variant="caption" tone="subtle">
+        {mode === 'system'
+          ? `Following your device, which is currently ${resolved}.`
+          : `Always ${mode}, whatever your device is set to.`}
+      </Text>
+    </Card>
+  );
+}
+
+const APPEARANCE_OPTIONS: { value: ThemeMode; label: string; hint: string }[] = [
+  { value: 'system', label: 'System', hint: 'Follows your device setting and changes with it.' },
+  { value: 'light', label: 'Light', hint: 'Always the light theme.' },
+  { value: 'dark', label: 'Dark', hint: 'Always the dark theme.' },
+];
 
 const PRESENCE_OPTIONS: {
   value: PresenceVisibility;

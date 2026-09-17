@@ -12,14 +12,16 @@ import {
   useMyPrivacySettings,
   useMyProfile,
   usePersonalRecords,
+  useRecentWorkouts,
   useTrainingStreak,
   useWeeklyTrainingSummary,
   type PersonalRecordWithExercise,
   type RecordType,
 } from '@/api';
-import { ActiveChallenges } from '@/components/challenges';
+import { ActiveChallenges, DailyChallengeCard } from '@/components/challenges';
 import { ImprovementRow, StatTile, WeeklyBars, type WeeklyMetric } from '@/components/progress';
-import { Card, Screen, Text } from '@/components/ui';
+import { Button, Card, Screen, Text } from '@/components/ui';
+import { WorkoutSummaryRow } from '@/components/workouts';
 import {
   formatCount,
   formatDurationSeconds,
@@ -62,8 +64,10 @@ export default function ProgressScreen() {
   const { data: records } = usePersonalRecords();
   const { data: improvements } = useExerciseProgress();
   const { data: badges } = useMyBadges();
+  const { data: workouts } = useRecentWorkouts(20);
 
   const [metric, setMetric] = useState<WeeklyMetric>('sessions');
+  const [showAllWorkouts, setShowAllWorkouts] = useState(false);
 
   const weightUnit = profile?.weight_unit ?? 'lb';
 
@@ -89,6 +93,10 @@ export default function ProgressScreen() {
             behind it, so you can always check it.
           </Text>
         </Card>
+        <DailyChallengeCard
+          onOpen={() => router.push('/challenges/daily')}
+          onStartWorkout={() => router.push('/session/new')}
+        />
         <ActiveChallenges
           onSeeAll={() => router.push('/challenges')}
           onOpenChallenge={(challengeId) => router.push(`/challenges/${challengeId}`)}
@@ -202,6 +210,49 @@ export default function ProgressScreen() {
         )}
       </Card>
 
+      {/* Workout history, labelled by type. The bridge between "here are my
+          numbers" and "here is the workout that produced them" — tapping a row
+          opens every set of it. */}
+      <Card
+        flush
+        style={{ paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.sm }}
+      >
+        <View style={{ paddingTop: theme.spacing.md }}>
+          <Text variant="subheading" heading>
+            Workout history
+          </Text>
+        </View>
+
+        {workouts && workouts.length > 0 ? (
+          <>
+            {(showAllWorkouts ? workouts : workouts.slice(0, 6)).map((workout, index, shown) => (
+              <WorkoutSummaryRow
+                key={workout.id}
+                workout={workout}
+                divider={index < shown.length - 1}
+                onPress={(sessionId) => router.push(`/session/${sessionId}`)}
+              />
+            ))}
+            {workouts.length > 6 ? (
+              <View style={{ paddingBottom: theme.spacing.md }}>
+                <Button
+                  label={showAllWorkouts ? 'Show fewer' : `Show all ${workouts.length}`}
+                  variant="ghost"
+                  size="small"
+                  onPress={() => setShowAllWorkouts((current) => !current)}
+                />
+              </View>
+            ) : null}
+          </>
+        ) : (
+          <View style={{ paddingBottom: theme.spacing.md }}>
+            <Text variant="caption" tone="muted">
+              No finished workouts yet.
+            </Text>
+          </View>
+        )}
+      </Card>
+
       {/* Personal records. */}
       <Card>
         <Text variant="subheading" heading>
@@ -229,6 +280,12 @@ export default function ProgressScreen() {
           </Text>
         </Card>
       ) : null}
+
+      <DailyChallengeCard
+        onOpen={() => router.push('/challenges/daily')}
+        onStartWorkout={() => router.push('/session/new')}
+        compact
+      />
 
       <ActiveChallenges
         onSeeAll={() => router.push('/challenges')}

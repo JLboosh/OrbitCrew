@@ -9,7 +9,7 @@ parallel without colliding.
 | Area                             | Owner      | Status                                                                |
 | -------------------------------- | ---------- | --------------------------------------------------------------------- |
 | Auth, profiles, privacy          | Foundation | **Done** — screen built                                               |
-| Database schema, RLS, migrations | Foundation | **Done** — 16 migrations applied                                      |
+| Database schema, RLS, migrations | Foundation | **Done** — 17 migrations; #17 must be pushed, see below               |
 | Navigation shell, design system  | Foundation | **Done**                                                              |
 | Typed data-access layer          | Foundation | **Done** for the areas below                                          |
 | Sessions + logging               | Lane A     | **Done** — Today + Active Session screens                             |
@@ -38,6 +38,82 @@ Two decisions worth knowing before you review it:
 Challenges have no entry point on Today or Crew, because those screens are Lane
 A's. `<ActiveChallenges onSeeAll={...} />` is a self-contained card built for
 exactly that insertion — one line, no prop plumbing.
+
+## Migration 17: workout types, member-submitted gyms, daily challenge
+
+`20260917000001_user_gyms_workout_types_daily_challenges.sql`. **Apply it with
+`npm run db:push` before running the app** — the workout flow writes a column it
+adds, so without it starting a workout fails outright.
+
+Three independent additions, and the reasoning behind each:
+
+**Workout types.** `sessions.workout_categories text[]`, NOT NULL defaulting to
+`'{}'`, with a CHECK pinning the vocabulary and a cap of four. Stored on the
+session rather than inferred from its exercises, because intent and outcome
+differ: a Chest + Triceps day where only the bench got logged is still a
+Chest + Triceps day. Legacy sessions keep the empty array and the app infers a
+label from their exercises' muscle groups — see `sessionCategoryKeys` in
+`src/lib/workoutTypes.ts`. **The vocabulary is duplicated** between that CHECK
+constraint and `WORKOUT_CATEGORIES`; adding a category means editing both, and a
+test asserts they agree.
+
+**Member-submitted gyms.** The original gyms migration promised "user-submitted
+gyms will go through a moderated RPC" and left `gym_source` with a `'user'` value
+ready. This supplies that RPC. `public.gyms` still has **no INSERT policy** — a
+client cannot write the shared directory, only ask `create_user_gym` to, which
+forces `source = 'user'`, records `created_by`, validates every field,
+rate-limits to five a day, and refuses duplicates. `find_similar_gyms` is the
+read-only half, run as the caller so RLS still applies, used to warn before
+submitting rather than only rejecting after.
+
+Both functions are SECURITY DEFINER, so the grants are part of the security
+boundary. They `revoke ... from public, anon` **and** grant only to
+`authenticated, service_role` — bug #1 below is exactly the mistake of revoking
+from one of the three.
+
+**The daily challenge.** A row in `challenge_templates`, not a new rule type: it
+is a one-day personal `session_count` challenge, so `score_challenge_for_user()`
+already scores it and cannot drift from every other challenge. One row per member
+per day, created on demand by `useDailyChallenge`, with the local date carried in
+the rule as `{"day":"2026-09-17"}` and a unique index on
+`(owner_id, template_key, rule->>'day')` making get-or-create race-safe. The day
+is indexed from the rule rather than derived from `starts_at` because
+`starts_at at time zone timezone` is STABLE, not IMMUTABLE, and Postgres will not
+index it.
+
+It has **no `badge_key`** on purpose — a badge earned every day stops meaning
+anything, and `rescore_challenge` skips the award when it is null.
+
+New checks live in `verify:db:gyms` (sections 10–13) and `verify:db:training`
+(sections 12–13), including that a member in no crew can still get a daily
+challenge — the failure mode the previous crew-only seed hid.
+
+## A bug worth reading before touching data fetching
+
+**The React Query cache was not scoped to a user, and was never cleared on
+sign-in.** Most keys in `queryKeys` say "mine" without saying whose:
+`['challenges','mine']`, `['session','active']`, `['sessions']`, `['presence']`,
+`['progress',…]`, `['crews']`, `['badges','mine']`. The cache outlives a
+sign-out, so signing in as a second account served the **first** account's rows
+for up to `gcTime`.
+
+The symptom was specific and misleading: switching between the seeded demo
+accounts showed a challenge list belonging to the previous member, and opening
+one of those challenges hit RLS, returned nothing, and rendered "not available".
+It read as certain members being locked out of a challenge when they were in fact
+being shown somebody else's.
+
+Fixed in `AuthProvider` by clearing the client when the signed-in id changes —
+not per key, so a query added later inherits it. It deliberately does **not**
+clear on a token refresh (supabase-js re-emits on every one, which would wipe the
+cache mid-workout) or while the persisted session is still resolving. Asserted by
+`src/auth/__tests__/cacheIsolation.test.tsx`.
+
+A second, quieter version of the same class: `useEndSession` invalidated
+`queryKeys.crews()` — `['crews']` — intending to refresh the crew goal and
+leaderboard, which live under `['crew', id, …]`. React Query matches by prefix
+and `['crews']` is not a prefix of `['crew']`, so neither refreshed after a
+workout. `invalidateAfterWorkout` now invalidates both.
 
 ## Getting started
 
@@ -171,12 +247,17 @@ The database suites create real users, sign them in, and assert through normal
 authenticated sessions — so RLS is genuinely exercised rather than bypassed.
 Run `verify:db` after any migration.
 
-| Suite                | Checks                                                      |
-| -------------------- | ----------------------------------------------------------- |
-| `verify:db:identity` | 25 — signup trigger, privacy defaults, cross-user isolation |
-| `verify:db:social`   | 42 — invite-only crews, roles, friendships, blocks          |
-| `verify:db:gyms`     | 38 — PostGIS distance, ratings, 30-day limit                |
-| `verify:db:training` | 65 — 1RM maths, presence expiry, leaderboard, challenges    |
+| Suite                | Checks                                                                         |
+| -------------------- | ------------------------------------------------------------------------------ |
+| `verify:db:identity` | 25 — signup trigger, privacy defaults, cross-user isolation                    |
+| `verify:db:social`   | 42 — invite-only crews, roles, friendships, blocks                             |
+| `verify:db:gyms`     | PostGIS distance, ratings, 30-day limit, member submissions, duplicate refusal |
+| `verify:db:training` | 1RM maths, presence expiry, leaderboard, challenges, workout types, daily      |
+
+`npm run verify` (typecheck + lint + Jest) covers the client: 95 tests, including
+the workout taxonomy, timezone-correct day boundaries across DST, the workout-type
+picker's selection rules, the daily challenge's error state, and cross-account
+cache isolation.
 
 ## Bugs this verification already caught
 
@@ -202,6 +283,21 @@ Worth reading before you write your own SQL, because two are easy to repeat:
 
 Not bugs, but things nobody has built yet:
 
+- **There is no friend activity feed**, and this is the largest remaining gap in
+  the social loop. Finishing a workout does correctly update the crew weekly goal,
+  the leaderboard, `gym_friend_visits`, challenge progress, personal records, and
+  every progress aggregate — but no screen lists what friends have been doing.
+  Building one needs the `crew_activity_feed()` function the training migration's
+  comments already refer to: `sessions` is own-rows-only under RLS, correctly so,
+  and a feed must REDACT rows per each member's `activity_detail_level` rather
+  than merely filter them. It was not added here because a privacy-sensitive
+  SECURITY DEFINER function should not ship without `verify:db` coverage proving
+  a non-participant sees zero rows, and that needs a real database.
+- **Gym photos are a URL, not an upload.** `gyms.image_url` takes an absolute
+  http(s) link. An upload needs a storage bucket with its own RLS plus an image
+  picker — `expo-image-picker` is a native module, and adding a dependency without
+  regenerating `package-lock.json` breaks `npm ci` in CI. A link works identically
+  on web, iOS, and Android today.
 - **Realtime is not wired up.** The tables are ready; crew activity and presence
   currently need a refetch.
 - **Community crowd patterns** ("usually busy Tue 5–7 PM") are still

@@ -1,4 +1,4 @@
-import type { Database, Json } from '@/types/database.types';
+import type { Database, Json } from '@/types/database';
 
 export type ChallengeRuleType = Database['public']['Enums']['challenge_rule_type'];
 

@@ -73,12 +73,41 @@ This project is currently **linked to the hosted Supabase project `gymApp`**
 npm install                # install dependencies
 cp .env.example .env       # then fill in the project URL and anon key
 npm run db:status          # show which migrations are applied remotely
+npm run db:push            # REQUIRED: apply migration 17 (see below)
 npm run db:types           # regenerate types from the live schema
 npm start                  # start the Expo dev server
+npm run web                # or run it in a browser on localhost:8081
 ```
 
 Get the URL and anon key from the Supabase dashboard under
 Project Settings → API, or via `npx supabase projects api-keys`.
+
+> ### `db:push` is not optional right now
+>
+> Migration `20260917000001_user_gyms_workout_types_daily_challenges.sql` adds
+> `sessions.workout_categories`, the `create_user_gym` / `find_similar_gyms`
+> RPCs, and the `daily_session` challenge template. Until it is applied:
+>
+> - **starting a workout fails outright** — the insert references a column that
+>   does not exist yet, and the error surfaces as a bare Postgres message;
+> - the daily challenge cannot be created, so its card shows its error state;
+> - the Add Gym button leads to a form whose submit always fails.
+>
+> Run `npm run db:status` first to check. If migration 17 is missing remotely,
+> `npm run db:push` applies it — additive and safe on a shared project.
+
+### A note on `src/types/database.ts`
+
+Generated types are regenerated from a live database, which is not available in
+every environment where this code is compiled. So the additions from migration 17
+are declared by hand in [`src/types/database.ts`](src/types/database.ts) and
+merged onto the generated `database.types.ts`, which stays untouched. Everything
+in the app imports `Database` from `@/types/database`.
+
+After running `npm run db:types` against a database that has migration 17
+applied, the hand-written declarations in that file are redundant and should be
+deleted, leaving a plain re-export. Nothing else has to change — no other module
+imports `database.types` directly.
 
 ### Applying schema changes
 
@@ -137,28 +166,97 @@ are the contract the app compiles against.
 ```
 app/                      expo-router routes
   (auth)/                 sign-in, sign-up
-  (tabs)/                 Today, Crew, Map*, Progress*, Profile
-  session/active.tsx      workout logging
-  gym/[id].tsx            gym detail (partial*)
+  (tabs)/                 Today, Crew, Map, Progress, Profile
+  session/new.tsx         "What are you training?" - step one of a workout
+  session/active.tsx      workout tracking: exercises, sets, notes, finish
+  session/[id].tsx        a finished workout in full
+  gym/[id].tsx            gym detail
+  gym/new.tsx             add a gym, with map pin-drop and duplicate warnings
+  challenges/daily.tsx    today's challenge
 src/
   api/                    typed data-access layer - all database access
-  auth/                   session state
+    dailyChallenge.ts     get-or-create today's challenge, per member per day
+  auth/                   session state, and the cross-account cache reset
   components/ui/          accessible primitives
+  components/workouts/    type picker, exercise picker, set editor, history row
   config/                 runtime-validated environment
   constants/branding.ts   the single place the app name lives
-  lib/                    Supabase client, React Query config
+  lib/
+    workoutTypes.ts       workout categories <-> muscle groups, legacy inference
+    localDay.ts           timezone-correct day boundaries for the daily challenge
+    exerciseEntry.ts      which fields a set row asks for
   test-utils/             shared test render helper
-  theme/                  colours, spacing, typography
-  types/                  generated database types (do not hand-edit)
-supabase/migrations/      16 numbered migrations (the source of truth)
+  theme/                  colours, spacing, typography, light/dark preference
+  types/
+    database.types.ts     generated (never hand-edit)
+    database.ts           generated + migration 17's additions; import this
+supabase/migrations/      17 numbered migrations (the source of truth)
 scripts/                  verification, seeding, OSM import
 docs/HANDOFF.md           lane ownership and database contract
-
-* placeholder, owned by the gyms/map + stats workstream
 ```
 
 See [docs/HANDOFF.md](docs/HANDOFF.md) for who owns what and the full database
 contract.
+
+## What to test
+
+Seed first, so there is real data to look at:
+
+```bash
+SUPABASE_SERVICE_ROLE_KEY=<key> npm run seed:reset
+```
+
+That creates `alex@`, `sam@`, `jordan@`, and `riley@gymcrew.dev`, all with
+password `DevPassword123!`. **Sign in as more than one of them.** Only Sam has
+opted into sharing, only Alex and Jordan are friends, and Riley's one session is
+deliberately too short to count — the differences between them are the point.
+
+**The workout flow.** Start a workout → pick a type → pick exercises → log sets →
+finish. Worth checking specifically:
+
+- Picking **Legs** shows leg exercises, not the whole library.
+- Two categories combine: Chest + Arms, or Chest + Triceps via "individual muscle
+  groups". Full Body and Custom replace the selection rather than adding to it.
+- **+ Add set** copies the previous set's numbers, and the values are edited in
+  place rather than through a separate form. Edits save on blur.
+- **+ Add custom exercise** saves to your account — it is still there in the next
+  workout, and only you can see it.
+- Finishing shows a summary, and the crew goal, leaderboard, progress charts, and
+  challenge progress all move.
+
+**Workout history.** Every finished workout shows its type and emoji; tapping one
+opens every set, rep, weight, and note. Sessions logged by the seed script predate
+workout types, so their type is inferred from the exercises and labelled "from
+exercises" — that is correct behaviour, not a gap.
+
+**Dark mode.** Profile → Appearance. System / Light / Dark, persisted across
+restarts. The map, progress bars, badges, charts, and avatars all follow it.
+
+**Add a gym.** Explore → Add a gym. Drop a pin, then try adding something with a
+name and location close to a gym that already exists — it should warn and offer to
+open the existing one instead, and refuse outright if the name matches within
+400 m.
+
+**The daily challenge.** It should appear for every account, including one in no
+crew. Progress moves when you finish a qualifying session (20+ minutes), and the
+window is your profile's timezone — Riley is in `America/Vancouver`, everyone else
+in `America/Toronto`.
+
+### Known gaps
+
+Honest list, so nobody files these as bugs:
+
+- **Gym photos are a URL, not an upload.** There is no storage bucket and no image
+  picker dependency, so the field takes a link.
+- **There is no friend activity feed.** Finishing a workout correctly updates the
+  crew goal, leaderboard, gym visit counts, challenges, and personal stats, but
+  there is no screen listing what friends have been doing. Building one needs a new
+  `SECURITY DEFINER` function that redacts per each member's
+  `activity_detail_level`, since `sessions` is own-rows-only under RLS. See
+  `docs/HANDOFF.md`.
+- **Realtime is still not wired up**, so crew activity and presence need a refetch.
+- **The daily challenge deliberately has no daily streak.** Streaks are counted in
+  weeks throughout the app, because a daily streak punishes rest days.
 
 ## Conventions
 
@@ -167,3 +265,6 @@ contract.
 - Never hardcode the app name — import `BRANDING.displayName`.
 - Never put secrets in `EXPO_PUBLIC_*`; those values ship inside the app bundle.
 - Every table gets RLS enabled and an explicit policy. No table is left open.
+- Line endings are pinned to LF by `.gitattributes`. Prettier is configured for
+  LF and runs as an ESLint rule, so a CRLF checkout — the Windows default with
+  `core.autocrlf=true` — fails `npm run lint` on every source file.

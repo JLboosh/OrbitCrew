@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
 import { Text } from './Text';
 
 import { BRANDING } from '@/constants/branding';
-import { avatarColor, useTheme } from '@/theme';
+import { avatarColor, readableTextOn, useTheme } from '@/theme';
 
 /**
  * The wordmark.
@@ -75,12 +75,15 @@ export function Avatar({ id, name, size = 32, overlap = false }: AvatarProps) {
         borderColor: theme.colors.surface,
       }}
     >
+      {/* Foreground derived from the background rather than fixed white: the
+          dark palette includes a near-white entry, on which white initials
+          disappear entirely. */}
       <Text
         style={{
           fontSize: size * 0.42,
           lineHeight: size * 0.52,
           fontWeight: '600',
-          color: '#FFFFFF',
+          color: readableTextOn(background),
         }}
       >
         {initial}

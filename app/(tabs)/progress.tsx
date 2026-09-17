@@ -89,7 +89,11 @@ export default function ProgressScreen() {
             behind it, so you can always check it.
           </Text>
         </Card>
-        <ActiveChallenges onSeeAll={() => router.push('/challenges')} />
+        <ActiveChallenges
+          onSeeAll={() => router.push('/challenges')}
+          onOpenChallenge={(challengeId) => router.push(`/challenges/${challengeId}`)}
+          onStartChallenge={() => router.push('/challenges/new')}
+        />
       </Screen>
     );
   }
@@ -226,7 +230,11 @@ export default function ProgressScreen() {
         </Card>
       ) : null}
 
-      <ActiveChallenges onSeeAll={() => router.push('/challenges')} />
+      <ActiveChallenges
+        onSeeAll={() => router.push('/challenges')}
+        onOpenChallenge={(challengeId) => router.push(`/challenges/${challengeId}`)}
+        onStartChallenge={() => router.push('/challenges/new')}
+      />
 
       {/* Plain statement of who can see this. Sharing is off by default. */}
       <Text variant="caption" tone="subtle">

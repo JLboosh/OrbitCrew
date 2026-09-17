@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 
 import { useAuth } from '@/auth/AuthProvider';
 import { isValidLatLng, type LatLng } from '@/lib/geo';
@@ -272,4 +272,72 @@ export function useMyGymVisitPattern(gymId: string | undefined) {
       };
     },
   });
+}
+
+export type GymPresenceByGymId = Record<string, GymPresenceMember[]>;
+
+/**
+ * Live presence for MANY gyms at once, for drawing avatars on map markers.
+ *
+ * WHY THIS IS TWO STEPS RATHER THAN ONE QUERY PER GYM
+ * --------------------------------------------------
+ * `gym_presence()` answers for a single gym, and calling it for 50 map pins would
+ * be 50 round trips to learn that 48 of them are empty — presence is off by
+ * default, so almost every gym has nobody in it.
+ *
+ * So: one cheap query against the `presence` table finds which gyms have anyone
+ * visible, then `gym_presence()` is called only for those. In practice that is
+ * one query plus zero or one more.
+ *
+ * The first query is safe to run from the client because `presence_select_permitted`
+ * already restricts rows to non-expired check-ins by members the caller may see —
+ * the same rule the RPC applies. It selects only `gym_id`: names and avatars come
+ * from the RPC, which is security-definer and therefore the vetted path for
+ * profile fields.
+ *
+ * Per-gym results reuse `queryKeys.gymPresence(id)`, so a gym the member then
+ * selects is served from cache instead of refetched by SelectedGymCard.
+ */
+export function useGymPresenceByGymId(gymIds: string[]) {
+  // Sorted and joined so the key is stable regardless of gym ordering, and a pan
+  // that returns the same gyms in a different order is a cache hit.
+  const key = [...gymIds].sort().join(',');
+
+  const occupied = useQuery({
+    queryKey: queryKeys.gymsWithPresence(key),
+    enabled: gymIds.length > 0,
+    staleTime: 30_000,
+    queryFn: async (): Promise<string[]> => {
+      const { data, error } = await supabase.from('presence').select('gym_id').in('gym_id', gymIds);
+      if (error) throw error;
+
+      return Array.from(new Set((data ?? []).map((row) => row.gym_id)));
+    },
+  });
+
+  const occupiedIds = occupied.data ?? [];
+
+  const details = useQueries({
+    queries: occupiedIds.map((gymId) => ({
+      queryKey: queryKeys.gymPresence(gymId),
+      staleTime: 30_000,
+      queryFn: async (): Promise<GymPresenceMember[]> => {
+        const { data, error } = await supabase.rpc('gym_presence', { p_gym_id: gymId });
+        if (error) throw error;
+        return (data ?? []) as GymPresenceMember[];
+      },
+    })),
+    combine: (results): GymPresenceByGymId => {
+      const map: GymPresenceByGymId = {};
+      results.forEach((result, index) => {
+        const gymId = occupiedIds[index];
+        // A member may have checked out between the two queries, which is normal
+        // rather than an error: an empty list simply means no avatar.
+        if (gymId && result.data && result.data.length > 0) map[gymId] = result.data;
+      });
+      return map;
+    },
+  });
+
+  return { data: details, isLoading: occupied.isLoading };
 }

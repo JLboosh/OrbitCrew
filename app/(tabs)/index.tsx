@@ -15,6 +15,7 @@ import {
   useRecentSessions,
   useStartSession,
 } from '@/api';
+import { ActiveChallenges } from '@/components/challenges';
 import {
   Avatar,
   AvatarStack,
@@ -61,6 +62,21 @@ export default function TodayScreen() {
   const { data: leaderboard } = useCrewLeaderboard(crew?.id);
 
   const firstName = profile?.display_name?.split(' ')[0] ?? 'there';
+
+  /**
+   * Challenges, shared by both layouts.
+   *
+   * Self-contained: it owns its own queries, so it needs no data plumbing from
+   * this screen. Rendered unconditionally — an opted-out member still sees what
+   * they could join, which is the point of the panel.
+   */
+  const challengesCard = (
+    <ActiveChallenges
+      onSeeAll={() => router.push('/challenges')}
+      onOpenChallenge={(challengeId) => router.push(`/challenges/${challengeId}`)}
+      onStartChallenge={() => router.push('/challenges/new')}
+    />
+  );
 
   const header = (
     <View style={styles.headerRow}>
@@ -324,6 +340,7 @@ export default function TodayScreen() {
 
           <View style={{ flex: 1, gap: theme.spacing.lg, minWidth: 280 }}>
             {readyCard}
+            {challengesCard}
             <Card>
               <SectionHeader
                 title="Crew"
@@ -406,6 +423,7 @@ export default function TodayScreen() {
         </Card>
       ) : null}
 
+      {challengesCard}
       {leaderboardCard}
       {recentCard}
     </Screen>

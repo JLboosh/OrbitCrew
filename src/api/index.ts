@@ -124,10 +124,12 @@ export {
 export {
   useGymFriendVisits,
   useGymPresence,
+  useGymPresenceByGymId,
   useGymSearch,
   useMyGymVisitPattern,
   useNearbyGyms,
   type GymFriendVisits,
+  type GymPresenceByGymId,
   type GymPresenceMember,
   type GymRow,
   type MyGymVisitPattern,

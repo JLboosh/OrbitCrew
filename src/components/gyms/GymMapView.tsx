@@ -1,13 +1,19 @@
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 
+import type { GymMapViewProps } from './GymMapView.types';
+
 import type { NearbyGym } from '@/api';
 import { Text } from '@/components/ui';
 import { formatDistance, projectToUnitSquare, type DistanceSystem, type LatLng } from '@/lib/geo';
 import { useTheme } from '@/theme';
 
 /**
- * A schematic plan view of nearby gyms.
+ * NATIVE gym map: a schematic plan view of nearby gyms.
+ *
+ * On web this file is not used at all — Metro resolves `GymMapView.web.tsx`, a
+ * real MapLibre map with a 3D University of Waterloo campus mode. This remains
+ * the native implementation, and the two share `GymMapViewProps`.
  *
  * WHAT THIS IS, AND WHAT IT IS NOT
  * --------------------------------
@@ -16,21 +22,17 @@ import { useTheme } from '@/theme';
  * says so out loud rather than letting a member assume otherwise — a map missing
  * a river between them and a gym would be actively misleading.
  *
- * WHY NOT A REAL TILE MAP YET
- * ---------------------------
- * The intended stack is `@maplibre/maplibre-react-native` with OpenFreeMap tiles
- * (https://tiles.openfreemap.org/styles/liberty — no key, no request limit, no
- * account). It is not used yet for two reasons:
+ * WHY NATIVE DOES NOT GET THE REAL MAP
+ * ------------------------------------
+ * `maplibre-gl` is a browser library: it needs WebGL and a DOM, so it cannot run
+ * under React Native. The native equivalent, `@maplibre/maplibre-react-native`,
+ * is a NATIVE module, so Expo Go cannot load it — it needs a development build
+ * (`npx expo prebuild`), which changes how everyone on the project runs the app
+ * daily. That is a deliberate, separate decision from shipping the web map.
  *
- *   1. MapLibre is a NATIVE module, so Expo Go cannot load it. It needs a
- *      development build (`npx expo prebuild`, then run on a device or
- *      simulator), which changes how everyone on the project runs the app daily.
- *   2. Adding it without regenerating `package-lock.json` breaks `npm ci` in CI.
- *
- * SWAPPING IT IN is intentionally a contained change. This component's props are
- * the seam: keep `GymMapViewProps` identical, render a `MapView` with a
- * `ShapeSource`/`SymbolLayer` built from the same `gyms`, and call `onSelectGym`
- * from the feature press handler. Every caller keeps working. Two things must
+ * SWAPPING IT IN stays a contained change: keep `GymMapViewProps` as it is,
+ * render a `MapView` with a `ShapeSource`/`SymbolLayer` built from the same
+ * `gyms`, and call `onSelectGym` from the feature press handler. Two things must
  * carry over: the "© OpenStreetMap contributors" attribution, which is a licence
  * condition, and the rule that no marker is ever drawn at a USER's position.
  */
@@ -38,17 +40,6 @@ import { useTheme } from '@/theme';
 const PIN_SIZE = 30;
 /** Pins closer together than this are nudged apart so both stay tappable. */
 const MIN_PIN_GAP = PIN_SIZE * 0.92;
-
-export interface GymMapViewProps {
-  /** The point the plot is centred on. Held in state only, never persisted. */
-  origin: LatLng;
-  /** Nearest-first, as returned by `nearby_gyms`. */
-  gyms: NearbyGym[];
-  radiusMetres: number;
-  selectedGymId?: string | null;
-  onSelectGym: (gym: NearbyGym) => void;
-  distanceSystem?: DistanceSystem;
-}
 
 interface PlottedPin {
   gym: NearbyGym;

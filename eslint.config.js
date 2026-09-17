@@ -21,6 +21,9 @@ module.exports = defineConfig([
       '.expo/types/**',
       // Deno runtime with its own toolchain; linted separately.
       'supabase/functions/**',
+      // maplibre-gl's own worker bundle, copied in by
+      // scripts/copy-maplibre-worker.mjs. Third-party build output.
+      'public/maplibre/**',
     ],
   },
   {

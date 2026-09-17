@@ -1,21 +1,29 @@
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
-import { useGymSearch, useMyProfile, useNearbyGyms, type NearbyGym } from '@/api';
+import {
+  useGymPresenceByGymId,
+  useGymSearch,
+  useMyProfile,
+  useNearbyGyms,
+  type NearbyGym,
+} from '@/api';
 import { GymListRow, GymMapView, SelectedGymCard } from '@/components/gyms';
 import { Button, Card, Screen, Text } from '@/components/ui';
+import { CAMPUS_CENTRE, isWithinCampus } from '@/lib/campus';
 import { useDeviceLocation } from '@/lib/deviceLocation';
 import {
   distanceSystemForWeightUnit,
   formatRadius,
   RADIUS_CHOICES,
   type DistanceSystem,
+  type LatLng,
 } from '@/lib/geo';
 import { useTheme } from '@/theme';
 
 /**
- * Map — discover gyms and the social activity around them.
+ * Explore — discover gyms and the social activity around them.
  *
  * THREE SEPARATE CONCEPTS, kept separate on purpose:
  *   1. Nearby gyms       — places, from our PostGIS-indexed OpenStreetMap cache.
@@ -31,8 +39,13 @@ import { useTheme } from '@/theme';
  *     no column for a person's coordinates.
  *   * There is no heat map, no breadcrumb trail, and no movement history.
  *
- * The map itself is a schematic plot rather than a tile map; see the comment in
- * GymMapView for why, and for how to swap MapLibre in behind the same props.
+ * WHY THE MAP OPENS ON CAMPUS RATHER THAN ASKING FOR LOCATION FIRST
+ * ----------------------------------------------------------------
+ * A permission prompt on arrival is the app taking something before it has shown
+ * it is worth anything. Opening on the University of Waterloo campus — where the
+ * 3D building data lives — means the map is immediately useful and explains
+ * itself, and location becomes an offer ("show gyms near me") rather than a
+ * gate. Nothing about the campus view needs to know where the member is.
  */
 export default function MapScreen() {
   const theme = useTheme();
@@ -45,123 +58,163 @@ export default function MapScreen() {
   const [selectedGymId, setSelectedGymId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
+  /**
+   * Where gym results are measured from.
+   *
+   * Starts at campus and follows the map as the member pans, so panning to
+   * another neighbourhood actually shows that neighbourhood's gyms. Granting
+   * location moves it to the device position once.
+   */
+  const [queryOrigin, setQueryOrigin] = useState<LatLng>(CAMPUS_CENTRE);
+
   const distanceSystem = distanceSystemForWeightUnit(profile?.weight_unit ?? 'lb');
 
-  const nearby = useNearbyGyms(location.coords, radiusMetres, 50);
+  const nearby = useNearbyGyms(queryOrigin, radiusMetres, 50);
   const search = useGymSearch(searchQuery);
 
   const gyms = nearby.data ?? [];
   const selectedGym = gyms.find((gym) => gym.id === selectedGymId) ?? null;
 
+  // One extra query for the whole set of pins, not one per pin. See the hook.
+  const { data: presenceByGymId } = useGymPresenceByGymId(gyms.map((gym) => gym.id));
+
   const openGym = (gymId: string) => router.push(`/gym/${gymId}`);
   const onSelectGym = (gym: NearbyGym) => setSelectedGymId(gym.id);
 
+  /**
+   * Re-query when the member pans somewhere genuinely different.
+   *
+   * Threshold rather than every camera move: `nearby_gyms` hits our own indexed
+   * table so it is cheap, but a query per frame would still be pointless churn,
+   * and the results barely change for a small nudge. Half the current radius is
+   * the point at which the previous result set stops covering what is on screen.
+   */
+  const onCentreChange = useCallback(
+    (centre: LatLng) => {
+      setQueryOrigin((current) => {
+        const moved = roughDistanceMetres(current, centre);
+        return moved > radiusMetres / 2 ? centre : current;
+      });
+    },
+    [radiusMetres],
+  );
+
+  const useMyLocation = useCallback(async () => {
+    await location.request();
+  }, [location]);
+
+  // Applying granted coordinates as the query origin, once.
+  const deviceCoords = location.coords;
+  const hasDeviceLocation = deviceCoords !== null;
+  if (deviceCoords && queryOrigin === CAMPUS_CENTRE) {
+    // Safe during render: setState with a different value schedules one extra
+    // pass, and the identity check makes it run exactly once.
+    setQueryOrigin(deviceCoords);
+  }
+
+  const onCampus = isWithinCampus(queryOrigin);
+
   return (
-    <Screen title="Map" subtitle="Find gyms near you.">
-      {/* Location gate. Asked for on tap rather than on mount: a permission
-          prompt the member did not initiate feels like the app taking something. */}
-      {location.coords === null ? (
-        <Card>
-          <Text variant="subheading">Find gyms around you</Text>
+    <Screen title="Explore" subtitle="Find gyms, and see who is training.">
+      <GymMapView
+        origin={queryOrigin}
+        gyms={gyms}
+        radiusMetres={radiusMetres}
+        selectedGymId={selectedGymId}
+        onSelectGym={onSelectGym}
+        distanceSystem={distanceSystem}
+        presenceByGymId={presenceByGymId}
+        hasDeviceLocation={hasDeviceLocation}
+        onCentreChange={onCentreChange}
+        height={theme.isWide ? 560 : 400}
+      />
+
+      {selectedGym ? (
+        <SelectedGymCard gym={selectedGym} distanceSystem={distanceSystem} onOpenDetail={openGym} />
+      ) : (
+        <Text variant="caption" tone="subtle">
+          {gyms.length > 0
+            ? 'Select a gym on the map or in the list for ratings, who is there, and check-in.'
+            : onCampus
+              ? 'Campus fitness centres appear as green markers.'
+              : 'No gyms in view. Try a wider radius, or search by name below.'}
+        </Text>
+      )}
+
+      {/* Location is an offer, not a gate: the map above already works without
+          it. Asked for on tap so the prompt is always something the member
+          initiated. */}
+      {!hasDeviceLocation && location.supported ? (
+        <Card variant="outline">
           <Text variant="caption" tone="muted">
-            Your location is used once, to ask which gyms are nearby. It is not saved, not shared,
-            and never tracked in the background.
+            Showing the University of Waterloo campus. Your location is used once, to rank gyms by
+            distance — it is not saved, not shared, and never tracked in the background.
           </Text>
-          {location.supported ? (
-            <Button
-              label="Use my location"
-              loading={location.status === 'requesting'}
-              onPress={location.request}
-            />
-          ) : null}
+          <Button
+            label="Show gyms near me"
+            variant="secondary"
+            loading={location.status === 'requesting'}
+            onPress={useMyLocation}
+          />
           {location.message ? (
             <Text variant="caption" tone="subtle">
               {location.message}
             </Text>
           ) : null}
-          {!location.supported ? (
-            <Text variant="caption" tone="subtle">
-              This build cannot read device location yet, so nearby search is unavailable. You can
-              still find a gym by name below.
-            </Text>
-          ) : null}
         </Card>
       ) : null}
 
-      {/* Nearby results. */}
-      {location.coords ? (
-        <>
-          <RadiusPicker
-            value={radiusMetres}
-            onChange={(next) => {
-              setRadiusMetres(next);
-              // The selection may fall outside the new radius.
-              setSelectedGymId(null);
-            }}
-            distanceSystem={distanceSystem}
-          />
-
-          {nearby.isLoading ? (
-            <Card>
-              <Text variant="caption" tone="muted">
-                Looking for gyms nearby…
-              </Text>
-            </Card>
-          ) : nearby.isError ? (
-            <Card>
-              <Text variant="caption" tone="danger">
-                Could not load nearby gyms.
-              </Text>
-              <Button label="Try again" variant="secondary" onPress={() => nearby.refetch()} />
-            </Card>
-          ) : gyms.length === 0 ? (
-            <Card>
-              <Text variant="subheading">
-                No gyms within {formatRadius(radiusMetres, distanceSystem)}
-              </Text>
-              <Text variant="caption" tone="muted">
-                Try a wider radius, or search by name below.
-              </Text>
-            </Card>
-          ) : (
-            <>
-              <GymMapView
-                origin={location.coords}
-                gyms={gyms}
-                radiusMetres={radiusMetres}
-                selectedGymId={selectedGymId}
-                onSelectGym={onSelectGym}
-                distanceSystem={distanceSystem}
-              />
-
-              {selectedGym ? (
-                <SelectedGymCard
-                  gym={selectedGym}
-                  distanceSystem={distanceSystem}
-                  onOpenDetail={openGym}
-                />
-              ) : (
-                <Text variant="caption" tone="subtle">
-                  Tap a pin or a gym below for ratings, who has trained there, and check-in.
-                </Text>
-              )}
-
-              <Card flush style={{ paddingHorizontal: theme.spacing.lg }}>
-                {gyms.map((gym, index) => (
-                  <GymListRow
-                    key={gym.id}
-                    gym={gym}
-                    label={index + 1}
-                    selected={gym.id === selectedGymId}
-                    distanceSystem={distanceSystem}
-                    onPress={onSelectGym}
-                  />
-                ))}
-              </Card>
-            </>
-          )}
-        </>
+      {!location.supported ? (
+        <Text variant="caption" tone="subtle">
+          This build cannot read device location, so distances are measured from the map centre. You
+          can still pan the map or search by name.
+        </Text>
       ) : null}
+
+      <RadiusPicker
+        value={radiusMetres}
+        onChange={(next) => {
+          setRadiusMetres(next);
+          // The selection may fall outside the new radius.
+          setSelectedGymId(null);
+        }}
+        distanceSystem={distanceSystem}
+      />
+
+      {nearby.isLoading ? (
+        <Text variant="caption" tone="muted">
+          Looking for gyms…
+        </Text>
+      ) : nearby.isError ? (
+        <Card>
+          <Text variant="caption" tone="danger">
+            Could not load gyms for this area.
+          </Text>
+          <Button label="Try again" variant="secondary" onPress={() => nearby.refetch()} />
+        </Card>
+      ) : gyms.length === 0 ? (
+        <Card>
+          <Text variant="subheading">
+            No gyms within {formatRadius(radiusMetres, distanceSystem)}
+          </Text>
+          <Text variant="caption" tone="muted">
+            Try a wider radius, pan the map, or search by name below.
+          </Text>
+        </Card>
+      ) : (
+        <Card flush style={{ paddingHorizontal: theme.spacing.lg }}>
+          {gyms.map((gym, index) => (
+            <GymListRow
+              key={gym.id}
+              gym={gym}
+              label={index + 1}
+              selected={gym.id === selectedGymId}
+              distanceSystem={distanceSystem}
+              onPress={onSelectGym}
+            />
+          ))}
+        </Card>
+      )}
 
       {/* Search by name. Always available, and the only path when location is not. */}
       <Card>
@@ -239,10 +292,26 @@ export default function MapScreen() {
 
       {/* Licence condition, not decoration. */}
       <Text variant="caption" tone="subtle">
-        Gym data © OpenStreetMap contributors
+        Gym locations and campus building footprints © OpenStreetMap contributors
       </Text>
     </Screen>
   );
+}
+
+/**
+ * Rough metres between two coordinates, for the "has the member panned far
+ * enough to re-query" test only.
+ *
+ * Equirectangular, matching `projectToUnitSquare`. Authoritative distances always
+ * come from PostGIS via `nearby_gyms.distance_metres` — this is a threshold test,
+ * not a number ever shown to anyone.
+ */
+function roughDistanceMetres(a: LatLng, b: LatLng): number {
+  const metresPerDegreeLat = 111_320;
+  const north = (b.latitude - a.latitude) * metresPerDegreeLat;
+  const east =
+    (b.longitude - a.longitude) * metresPerDegreeLat * Math.cos((a.latitude * Math.PI) / 180);
+  return Math.hypot(north, east);
 }
 
 function RadiusPicker({

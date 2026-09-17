@@ -52,3 +52,8 @@ coverage/
 /android
 .claude/settings.local.json
 
+
+# MapLibre's worker, published into public/ by scripts/copy-maplibre-worker.mjs
+# on postinstall. Generated from the pinned dependency — committing it would let
+# the worker drift out of sync with the main bundle on the next version bump.
+/public/maplibre/

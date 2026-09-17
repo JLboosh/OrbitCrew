@@ -69,6 +69,11 @@ export const queryKeys = {
   gymRatingSummary: (gymId: string) => ['gym', gymId, 'rating-summary'] as const,
 
   presence: () => ['presence'] as const,
+  /**
+   * Which gyms in a set have anyone checked in. Keyed on the sorted, joined ids
+   * so panning back to a previously seen set of pins is a cache hit.
+   */
+  gymsWithPresence: (gymIdKey: string) => ['presence', 'gyms', gymIdKey] as const,
 
   // Gyms and map. The nearby key includes the rounded origin and radius so
   // panning to a new area is a new cache entry rather than a silent overwrite.

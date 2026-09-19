@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
+import { Image, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
 
 import { Text } from './Text';
 
@@ -52,10 +52,28 @@ export interface AvatarProps {
   size?: number;
   /** Overlaps the previous avatar, for stacks. */
   overlap?: boolean;
+  /**
+   * Uploaded profile picture, when the member has one.
+   *
+   * Optional on purpose: most avatars in the app are drawn from data that carries
+   * no picture (crew names, leaderboard rows), and passing nothing keeps the
+   * initial-based behaviour those surfaces have always had.
+   */
+  imageUrl?: string | null;
 }
 
-/** Initial-based avatar. No image loading, so lists never flash placeholders. */
-export function Avatar({ id, name, size = 32, overlap = false }: AvatarProps) {
+/**
+ * Avatar: an uploaded picture when there is one, otherwise the member's initial.
+ *
+ * The coloured initial is not a placeholder waiting to be replaced — it is the
+ * real avatar for everyone who has not uploaded a picture, which is most people.
+ * Derived from the id, so it is stable across devices and keeps a stack readable.
+ *
+ * When there IS a picture, the initial stays rendered underneath it rather than
+ * being swapped out on load, so a slow or broken image shows the member's colour
+ * and letter instead of an empty hole.
+ */
+export function Avatar({ id, name, size = 32, overlap = false, imageUrl }: AvatarProps) {
   const theme = useTheme();
   const background = avatarColor(id, theme.colors.avatarPalette);
   const initial = (name.trim()[0] ?? '?').toUpperCase();
@@ -73,6 +91,7 @@ export function Avatar({ id, name, size = 32, overlap = false }: AvatarProps) {
         marginLeft: overlap ? -size * 0.28 : 0,
         borderWidth: 2,
         borderColor: theme.colors.surface,
+        overflow: 'hidden',
       }}
     >
       {/* Foreground derived from the background rather than fixed white: the
@@ -88,6 +107,22 @@ export function Avatar({ id, name, size = 32, overlap = false }: AvatarProps) {
       >
         {initial}
       </Text>
+
+      {imageUrl ? (
+        <Image
+          source={{ uri: imageUrl }}
+          // Decorative: the wrapper already carries the member's name as its
+          // accessibility label, so announcing the image would say it twice.
+          accessibilityElementsHidden
+          importantForAccessibility="no"
+          style={{
+            position: 'absolute',
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+          }}
+        />
+      ) : null}
     </View>
   );
 }

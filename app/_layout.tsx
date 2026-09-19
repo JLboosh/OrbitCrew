@@ -36,11 +36,28 @@ function useProtectedRoute() {
 }
 
 function RootNavigator() {
-  const { initialising } = useAuth();
+  const { initialising, session } = useAuth();
+  const segments = useSegments();
   const theme = useTheme();
   useProtectedRoute();
 
-  if (initialising) {
+  /**
+   * Signed out, but still standing on a signed-in screen.
+   *
+   * `useProtectedRoute` redirects from an EFFECT, which runs after render — so on
+   * sign-out there is at least one frame where the tab screens are still mounted
+   * with no session and, by then, an already-cleared query cache. Every screen
+   * that distinguishes "no data" from "loading" renders its failure state into
+   * that frame, which is what produced the message that flashed past too quickly
+   * to read after confirming sign out. (It was the daily challenge card's
+   * "Today's challenge did not load".)
+   *
+   * Holding the neutral indicator for that frame fixes the whole class of it at
+   * once, rather than teaching a dozen screens to special-case being signed out.
+   */
+  const signedOutOnPrivateScreen = !initialising && !session && segments[0] !== '(auth)';
+
+  if (initialising || signedOutOnPrivateScreen) {
     return (
       <View
         style={{

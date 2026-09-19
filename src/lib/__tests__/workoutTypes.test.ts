@@ -22,6 +22,9 @@ describe('category catalogue', () => {
   it('keeps every key within the vocabulary the CHECK constraint allows', () => {
     // Mirrors sessions_workout_categories_valid. If these diverge, a member picks a
     // workout type and the insert fails with a constraint violation.
+    // Note this is a SUPERSET: 'custom' is still permitted by the constraint but
+    // is no longer offered by the product. The assertion below is one-directional
+    // on purpose — every catalogue key must be allowed, not the reverse.
     const allowed = [
       'legs',
       'arms',
@@ -86,7 +89,6 @@ describe('musclesForCategories', () => {
     // A filter that matched nothing would leave the exercise list empty, which is
     // the opposite of what Full Body promises.
     expect(musclesForCategories(['full_body'])).toBeNull();
-    expect(musclesForCategories(['custom'])).toBeNull();
     expect(musclesForCategories([])).toBeNull();
   });
 

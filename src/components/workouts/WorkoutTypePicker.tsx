@@ -49,27 +49,22 @@ export function WorkoutTypePicker({ selected, onChange }: WorkoutTypePickerProps
       return;
     }
 
-    // Full Body and Custom mean "no filter", so combining them with a specific
-    // muscle group would be contradictory. Picking one replaces the selection.
-    if (key === 'full_body' || key === 'custom') {
+    // Full Body means "no filter", so combining it with a specific muscle group
+    // would be contradictory. Picking it replaces the selection.
+    if (key === 'full_body') {
       onChange([key]);
       return;
     }
 
-    const withoutBroad = selected.filter(
-      (existing) => existing !== 'full_body' && existing !== 'custom',
-    );
+    const withoutBroad = selected.filter((existing) => existing !== 'full_body');
     if (withoutBroad.length >= MAX_WORKOUT_CATEGORIES) return;
     onChange([...withoutBroad, key]);
   };
 
   const grid = WORKOUT_CATEGORIES.filter(
-    (category) =>
-      category.tier === 'primary' && category.key !== 'full_body' && category.key !== 'custom',
+    (category) => category.tier === 'primary' && category.key !== 'full_body',
   );
-  const wide = WORKOUT_CATEGORIES.filter(
-    (category) => category.key === 'full_body' || category.key === 'custom',
-  );
+  const wide = WORKOUT_CATEGORIES.filter((category) => category.key === 'full_body');
   const refinements = WORKOUT_CATEGORIES.filter((category) => category.tier === 'refinement');
 
   return (
@@ -145,7 +140,7 @@ export function WorkoutTypePicker({ selected, onChange }: WorkoutTypePickerProps
       <Card variant="outline">
         {selected.length === 0 ? (
           <Text variant="caption" tone="muted">
-            Pick at least one. Choose Custom Workout if you would rather browse everything.
+            Pick at least one. Choose Full Body if you would rather browse everything.
           </Text>
         ) : (
           <>

@@ -45,7 +45,7 @@ const PICKER_RADIUS_METRES = 2000;
 export default function AddGymScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const params = useLocalSearchParams<{ lat?: string; lng?: string }>();
+  const params = useLocalSearchParams<{ lat?: string; lng?: string; next?: string }>();
 
   const { data: profile } = useMyProfile();
   const location = useDeviceLocation();
@@ -104,8 +104,17 @@ export default function AddGymScreen() {
         confirmPossibleDuplicate: acknowledgedDuplicate,
       });
 
-      // Straight to the gym page: it is a normal gym now, so the member can rate
-      // it, check in, or start a workout there immediately.
+      // Back to whatever sent them here. A member who was part-way through
+      // starting a workout came to add the gym they are standing in — dropping
+      // them on the gym page instead would abandon that workout, and they would
+      // have to start over and find the gym again.
+      if (params.next === 'session') {
+        router.replace(`/session/new?gymId=${gymId}`);
+        return;
+      }
+
+      // Otherwise straight to the gym page: it is a normal gym now, so the member
+      // can rate it, check in, or start a workout there immediately.
       router.replace(`/gym/${gymId}`);
     } catch (err) {
       setError(errorMessage(err, 'Could not add that gym. Please try again.'));

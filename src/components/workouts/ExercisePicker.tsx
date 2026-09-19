@@ -31,7 +31,7 @@ export interface ExercisePickerProps {
  *
  * Nothing is hidden irreversibly. "Show everything" is one tap away, because a
  * member doing an unplanned extra lift should not have to abandon the workout to
- * log it, and Full Body / Custom start unfiltered by definition.
+ * log it, and Full Body starts unfiltered by definition.
  *
  * The member's own custom exercises are in the same list as the canonical ones,
  * marked as theirs, because at the moment of choosing there is no difference that
@@ -53,7 +53,7 @@ export function ExercisePicker({
   const wantedMuscles = useMemo(() => musclesForCategories(categories), [categories]);
   const added = useMemo(() => new Set(alreadyAddedIds), [alreadyAddedIds]);
 
-  // Null means the categories imposed no filter (Full Body, Custom, or nothing
+  // Null means the categories imposed no filter (Full Body, or nothing
   // chosen), which is different from "filter matched nothing".
   const unfiltered = wantedMuscles === null || showAll;
 

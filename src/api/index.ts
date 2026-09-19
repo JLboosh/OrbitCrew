@@ -30,10 +30,13 @@
 
 // Identity and privacy
 export {
+  avatarObjectPath,
   useMyPrivacySettings,
   useMyProfile,
+  useRemoveAvatar,
   useUpdatePrivacySettings,
   useUpdateProfile,
+  useUploadAvatar,
   type ActivityDetailLevel,
   type PresenceVisibility,
   type PrivacyPatch,

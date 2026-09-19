@@ -32,7 +32,6 @@ describe('WorkoutTypePicker', () => {
       'Shoulders',
       'Cardio',
       'Full Body',
-      'Custom Workout',
     ]) {
       expect(screen.getByRole('checkbox', { name: label })).toBeOnTheScreen();
     }

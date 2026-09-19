@@ -36,9 +36,18 @@ export function DailyChallengeCard({
   compact = false,
 }: DailyChallengeCardProps) {
   const theme = useTheme();
-  const { data, isLoading, isError, error, refetch, isFetching } = useDailyChallenge();
+  const { data, isPending, isError, error, refetch, isFetching } = useDailyChallenge();
 
-  if (isLoading) {
+  /**
+   * `isPending` rather than `isLoading`, which matters more than it looks.
+   *
+   * `isLoading` is `isPending && isFetching`, so it is FALSE for a query that has
+   * not started — which is exactly the state `useDailyChallenge` is in while it
+   * waits for the profile, or when it is disabled because nobody is signed in.
+   * With `isLoading` those states fell through to the error branch below and
+   * claimed the challenge had failed to load when nothing had been attempted.
+   */
+  if (isPending) {
     return (
       <Card>
         <Text variant="eyebrow" tone="muted">
@@ -76,7 +85,18 @@ export function DailyChallengeCard({
 
   const { today, completedInWindow, windowDays } = data;
 
-  const body = (
+  /**
+   * The readable part of the card, which is what "open the challenge" applies to.
+   *
+   * SEPARATED FROM THE ACTION BUTTON ON PURPOSE. This used to be one block wrapped
+   * in a Pressable, with the "Start a workout" Button inside it — a control nested
+   * inside another control. On web that is not merely untidy: react-native-web
+   * renders `accessibilityRole="button"` as a real `<button>`, so it produced a
+   * `<button>` inside a `<button>`, which React rejects as invalid nesting and
+   * which no screen reader can describe sensibly. It went unnoticed because this
+   * whole branch never rendered while the daily challenge was failing to load.
+   */
+  const summary = (
     <View style={{ gap: theme.spacing.sm }}>
       <View style={styles.between}>
         <Text variant="eyebrow" tone="muted">
@@ -110,28 +130,34 @@ export function DailyChallengeCard({
           counted in weeks, not days, so a rest day never breaks anything.
         </Text>
       ) : null}
-
-      {!today.completed && onStartWorkout ? (
-        <Button label="Start a workout" icon="play" variant="secondary" onPress={onStartWorkout} />
-      ) : null}
     </View>
   );
 
-  if (!onOpen) return <Card>{body}</Card>;
+  const startButton =
+    !today.completed && onStartWorkout ? (
+      <Button label="Start a workout" icon="play" variant="secondary" onPress={onStartWorkout} />
+    ) : null;
 
   return (
     <Card>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Daily challenge, ${today.progress} of ${today.target}${
-          today.completed ? ', complete' : ''
-        }`}
-        accessibilityHint="Opens today's challenge."
-        onPress={onOpen}
-        style={({ pressed }) => ({ opacity: pressed ? 0.75 : 1 })}
-      >
-        {body}
-      </Pressable>
+      {onOpen ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Daily challenge, ${today.progress} of ${today.target}${
+            today.completed ? ', complete' : ''
+          }`}
+          accessibilityHint="Opens today's challenge."
+          onPress={onOpen}
+          style={({ pressed }) => ({ opacity: pressed ? 0.75 : 1 })}
+        >
+          {summary}
+        </Pressable>
+      ) : (
+        summary
+      )}
+
+      {/* Sibling of the pressable summary, never a child of it. */}
+      {startButton}
     </Card>
   );
 }

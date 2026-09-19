@@ -15,15 +15,21 @@ let mockPrivacyData: Record<string, unknown> = {};
 jest.mock('@/api', () => ({
   useMyProfile: () => ({
     data: {
+      id: '11111111-1111-4111-8111-111111111111',
       display_name: 'Alex Rivera',
       username: 'alexrivera',
       timezone: 'America/Toronto',
       weight_unit: 'lb',
+      avatar_url: null,
     },
   }),
   useMyPrivacySettings: () => ({ data: mockPrivacyData, isLoading: false }),
   useUpdatePrivacySettings: () => ({ mutate: mockUpdatePrivacy }),
-  useUpdateProfile: () => ({ mutate: mockUpdateProfile }),
+  useUpdateProfile: () => ({ mutate: mockUpdateProfile, isPending: false }),
+  // The identity card owns the picture controls; these tests are about the
+  // privacy controls, so the mutations only need to exist.
+  useUploadAvatar: () => ({ mutateAsync: jest.fn(), isPending: false }),
+  useRemoveAvatar: () => ({ mutateAsync: jest.fn(), isPending: false }),
 }));
 
 jest.mock('@/auth/AuthProvider', () => ({

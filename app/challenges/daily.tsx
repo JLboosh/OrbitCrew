@@ -23,11 +23,13 @@ export default function DailyChallengeScreen() {
   const theme = useTheme();
   const router = useRouter();
 
-  const { data, isLoading, isError, error, refetch, isFetching } = useDailyChallenge();
+  const { data, isPending, isError, error, refetch, isFetching } = useDailyChallenge();
   const { data: activeSession } = useActiveSession();
   const refresh = useRefreshDailyChallenge();
 
-  if (isLoading) {
+  // `isPending`, not `isLoading`: a query that has not started yet (waiting on
+  // the profile, or disabled while signed out) is pending, not failed.
+  if (isPending) {
     return (
       <Screen title="Daily challenge">
         <Text tone="muted">Loading today&apos;s challenge…</Text>

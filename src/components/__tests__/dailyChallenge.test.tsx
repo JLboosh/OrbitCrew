@@ -48,6 +48,7 @@ function stateFor(overrides: { progress?: number; completed?: boolean } = {}) {
       description: 'Train once today. Resets tomorrow morning.',
     },
     isLoading: false,
+    isPending: false,
     isError: false,
     error: null,
     refetch: mockRefetch,
@@ -94,6 +95,7 @@ describe('DailyChallengeCard', () => {
     mockUseDailyChallenge.mockReturnValue({
       data: undefined,
       isLoading: false,
+      isPending: false,
       isError: true,
       error: { message: 'network request failed' },
       refetch: mockRefetch,
@@ -114,6 +116,7 @@ describe('DailyChallengeCard', () => {
     mockUseDailyChallenge.mockReturnValue({
       data: undefined,
       isLoading: false,
+      isPending: false,
       isError: true,
       error: { message: 'new row violates row-level security policy for table "challenges"' },
       refetch: mockRefetch,
@@ -130,6 +133,7 @@ describe('DailyChallengeCard', () => {
     mockUseDailyChallenge.mockReturnValue({
       data: undefined,
       isLoading: true,
+      isPending: true,
       isError: false,
       error: null,
       refetch: mockRefetch,

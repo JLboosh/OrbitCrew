@@ -431,6 +431,7 @@ export type Database = {
         Row: {
           created_at: string
           created_by: string | null
+          description: string | null
           equipment: Database["public"]["Enums"]["exercise_equipment"]
           id: string
           is_weighted: boolean
@@ -440,6 +441,7 @@ export type Database = {
         Insert: {
           created_at?: string
           created_by?: string | null
+          description?: string | null
           equipment?: Database["public"]["Enums"]["exercise_equipment"]
           id?: string
           is_weighted?: boolean
@@ -449,6 +451,7 @@ export type Database = {
         Update: {
           created_at?: string
           created_by?: string | null
+          description?: string | null
           equipment?: Database["public"]["Enums"]["exercise_equipment"]
           id?: string
           is_weighted?: boolean
@@ -652,8 +655,11 @@ export type Database = {
           city: string | null
           country_code: string | null
           created_at: string
+          created_by: string | null
+          description: string | null
           hidden_at: string | null
           id: string
+          image_url: string | null
           location: unknown
           name: string
           opening_hours: string | null
@@ -668,8 +674,11 @@ export type Database = {
           city?: string | null
           country_code?: string | null
           created_at?: string
+          created_by?: string | null
+          description?: string | null
           hidden_at?: string | null
           id?: string
+          image_url?: string | null
           location: unknown
           name: string
           opening_hours?: string | null
@@ -684,8 +693,11 @@ export type Database = {
           city?: string | null
           country_code?: string | null
           created_at?: string
+          created_by?: string | null
+          description?: string | null
           hidden_at?: string | null
           id?: string
+          image_url?: string | null
           location?: unknown
           name?: string
           opening_hours?: string | null
@@ -695,7 +707,15 @@ export type Database = {
           updated_at?: string
           website?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "gyms_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       personal_records: {
         Row: {
@@ -945,6 +965,7 @@ export type Database = {
           started_at: string
           updated_at: string
           user_id: string
+          workout_categories: string[]
         }
         Insert: {
           created_at?: string
@@ -956,6 +977,7 @@ export type Database = {
           started_at?: string
           updated_at?: string
           user_id: string
+          workout_categories?: string[]
         }
         Update: {
           created_at?: string
@@ -967,6 +989,7 @@ export type Database = {
           started_at?: string
           updated_at?: string
           user_id?: string
+          workout_categories?: string[]
         }
         Relationships: [
           {
@@ -1221,6 +1244,21 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      create_user_gym: {
+        Args: {
+          p_address?: string
+          p_city?: string
+          p_confirm_possible_duplicate?: boolean
+          p_country_code?: string
+          p_description?: string
+          p_image_url?: string
+          p_latitude: number
+          p_longitude: number
+          p_name: string
+          p_website?: string
+        }
+        Returns: string
+      }
       crew_role_of: {
         Args: { p_crew_id: string; p_user_id?: string }
         Returns: Database["public"]["Enums"]["crew_role"]
@@ -1257,6 +1295,7 @@ export type Database = {
           started_at: string
           updated_at: string
           user_id: string
+          workout_categories: string[]
         }
         SetofOptions: {
           from: "*"
@@ -1283,6 +1322,25 @@ export type Database = {
           display_name: string
           id: string
           username: string
+        }[]
+      }
+      find_similar_gyms: {
+        Args: {
+          p_address?: string
+          p_latitude: number
+          p_limit?: number
+          p_longitude: number
+          p_name: string
+        }
+        Returns: {
+          address: string
+          distance_metres: number
+          id: string
+          is_probable_duplicate: boolean
+          latitude: number
+          longitude: number
+          match_reason: string
+          name: string
         }[]
       }
       friendship_pair: {
@@ -1338,6 +1396,7 @@ export type Database = {
           opening_hours: string
         }[]
       }
+      normalise_place_name: { Args: { p_value: string }; Returns: string }
       purge_expired_presence: { Args: never; Returns: number }
       redeem_crew_invite: { Args: { p_code: string }; Returns: string }
       rescore_challenge: { Args: { p_challenge_id: string }; Returns: number }

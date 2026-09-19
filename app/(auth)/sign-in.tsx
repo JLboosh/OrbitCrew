@@ -1,4 +1,4 @@
-import { Link } from 'expo-router';
+import { Link, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { TextInput, View } from 'react-native';
 
@@ -10,6 +10,15 @@ import { useTheme } from '@/theme';
 export default function SignInScreen() {
   const theme = useTheme();
   const { signIn } = useAuth();
+
+  /**
+   * Set by the sign-up screen when the new account still needs its email
+   * confirmed. Carried in the route rather than in shared state so it survives the
+   * navigation and disappears on its own the next time this screen is opened
+   * normally.
+   */
+  const { pending } = useLocalSearchParams<{ pending?: string }>();
+  const awaitingConfirmation = pending === '1';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -44,9 +53,19 @@ export default function SignInScreen() {
 
   return (
     <Screen title={BRANDING.displayName} subtitle={BRANDING.tagline}>
+      {awaitingConfirmation ? (
+        <Card variant="outline">
+          <Text variant="subheading">Almost there</Text>
+          <Text variant="caption" tone="muted">
+            Your account is created. Click the link in the email we sent to confirm it, then sign in
+            below.
+          </Text>
+        </Card>
+      ) : null}
+
       <Card>
         <Text variant="heading" heading>
-          Welcome back
+          {awaitingConfirmation ? 'Sign in' : 'Welcome back'}
         </Text>
 
         <View style={{ gap: theme.spacing.md, marginTop: theme.spacing.md }}>

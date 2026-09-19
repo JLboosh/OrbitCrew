@@ -20,8 +20,15 @@ export type MuscleGroup = Database['public']['Enums']['muscle_group'];
  * "Chest + Triceps", not "Chest + Arms". They map one-to-one onto `muscle_group`,
  * so combining a broad category with a narrow one needs no special case.
  *
- * STORAGE. Selected keys are written to `sessions.workout_categories`, whose CHECK
- * constraint lists exactly the keys below. Adding one here means adding it there.
+ * STORAGE. Selected keys are written to `sessions.workout_categories`. Its CHECK
+ * constraint must permit every key below, so ADDING one here means adding it to
+ * the constraint in a new migration first.
+ *
+ * The reverse is not true, and the constraint is currently a superset: it still
+ * permits `'custom'`, from a "Custom Workout" option that has since been removed
+ * from the product. Applied migrations are append-only (see AGENTS.md), and a
+ * constraint that allows a value nothing writes is harmless — whereas a constraint
+ * that forbids a value the picker offers breaks starting a workout.
  */
 export type WorkoutCategoryKey =
   | 'legs'
@@ -32,7 +39,6 @@ export type WorkoutCategoryKey =
   | 'core'
   | 'cardio'
   | 'full_body'
-  | 'custom'
   | 'quads'
   | 'hamstrings'
   | 'glutes'
@@ -47,8 +53,8 @@ export interface WorkoutCategory {
   emoji: string;
   /**
    * Muscle groups whose exercises belong to this category. Empty means "do not
-   * filter" — used by Full Body and Custom, which are about breadth rather than a
-   * particular muscle.
+   * filter" — used by Full Body, which is about breadth rather than a particular
+   * muscle.
    */
   muscles: MuscleGroup[];
   /**
@@ -132,15 +138,6 @@ export const WORKOUT_CATEGORIES: readonly WorkoutCategory[] = [
     tier: 'primary',
     hint: 'The whole library, nothing filtered out',
   },
-  {
-    key: 'custom',
-    label: 'Custom Workout',
-    emoji: '✳️',
-    muscles: [],
-    tier: 'primary',
-    hint: 'Pick anything, in any combination',
-  },
-
   // Refinements. One-to-one with `muscle_group`, so "Chest + Triceps" is a real
   // selection rather than an approximation of it.
   {
@@ -234,7 +231,7 @@ export function musclesForCategories(keys: readonly string[]): MuscleGroup[] | n
   const categories = knownCategories(keys);
   if (categories.length === 0) return null;
 
-  // A single unrestricted category (Full Body, Custom) opens the whole library
+  // A single unrestricted category (Full Body) opens the whole library
   // even when combined with others — the broader intent wins, because a member
   // who picked Full Body should never find an exercise missing.
   if (categories.some((category) => category.muscles.length === 0)) return null;

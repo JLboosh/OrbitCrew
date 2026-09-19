@@ -20,9 +20,17 @@ export interface AuthState {
 }
 
 export interface AuthContextValue extends AuthState {
-  signUp: (input: SignUpInput) => Promise<void>;
+  signUp: (input: SignUpInput) => Promise<SignUpResult>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+}
+
+export interface SignUpResult {
+  /**
+   * True when Supabase created the account but no session, i.e. the member must
+   * click the link in their email before they can sign in.
+   */
+  needsEmailConfirmation: boolean;
 }
 
 export interface SignUpInput {
@@ -128,7 +136,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       initialising,
 
       async signUp({ email, password, displayName, username }: SignUpInput) {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email: email.trim(),
           password,
           options: {
@@ -144,6 +152,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           },
         });
         if (error) throw error;
+
+        /**
+         * Whether the account is usable right now.
+         *
+         * With email confirmation on — which it is on the hosted project — sign-up
+         * returns a user but NO session, so nothing routes anywhere and the member
+         * is left on the form. The result used to be discarded, which meant the
+         * caller could not tell that case from an immediate sign-in and had to
+         * guess. Returning it lets the sign-up screen send them where they
+         * actually need to go next.
+         */
+        return { needsEmailConfirmation: data.session === null };
       },
 
       async signIn(email: string, password: string) {

@@ -99,10 +99,23 @@ export default function TabsLayout() {
               ),
             }}
           />
+          <Tabs.Screen
+            name="friends"
+            options={{
+              title: 'Friends',
+              tabBarIcon: ({ color, focused }) => (
+                <Ionicons
+                  name={focused ? 'person-add' : 'person-add-outline'}
+                  size={22}
+                  color={color}
+                />
+              ),
+            }}
+          />
           {/*
             Profile is reachable from the Today header on phones and from the
-            sidebar account row on wide screens, matching the reference design's
-            four-tab bar. `href: null` keeps the route without a tab button.
+            sidebar account row on wide screens. `href: null` keeps the route
+            without a tab button.
           */}
           <Tabs.Screen name="profile" options={{ href: null, title: 'Profile' }} />
         </Tabs>

@@ -1,4 +1,4 @@
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { TextInput, View } from 'react-native';
 
@@ -9,27 +9,42 @@ import { useTheme } from '@/theme';
 
 export default function SignUpScreen() {
   const theme = useTheme();
+  const router = useRouter();
   const { signUp } = useAuth();
 
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const canSubmit = email.trim().length > 3 && password.length >= 6 && !submitting;
 
   async function handleSubmit() {
     setError(null);
-    setNotice(null);
     setSubmitting(true);
     try {
-      await signUp({ email, password, displayName });
-      // With email confirmation enabled there is no session yet, so the root
-      // layout will not redirect. Tell the member what to do next rather than
-      // leaving them on an apparently inert screen.
-      setNotice('Check your email to confirm your account, then sign in.');
+      const { needsEmailConfirmation } = await signUp({ email, password, displayName });
+
+      /**
+       * Move to sign-in rather than sitting here.
+       *
+       * Email confirmation means there is no session, so the root layout has
+       * nothing to react to and this screen would just keep showing a filled-in
+       * create-account form. The member then confirms in their mail client, comes
+       * back, and is still looking at the form they already submitted — which
+       * reads as though the sign-up never worked.
+       *
+       * The "check your email" instruction travels with them, so it is still on
+       * screen at the place they have to return to anyway.
+       */
+      if (needsEmailConfirmation) {
+        router.replace('/(auth)/sign-in?pending=1');
+        return;
+      }
+
+      // Confirmation disabled: a session already exists and the root layout is
+      // about to route into the app, so there is nothing to say.
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create your account.');
     } finally {
@@ -107,12 +122,6 @@ export default function SignUpScreen() {
               {error}
             </Text>
           ) : null}
-          {notice ? (
-            <Text variant="caption" tone="success" accessibilityLiveRegion="polite">
-              {notice}
-            </Text>
-          ) : null}
-
           <Button
             label="Create account"
             size="large"

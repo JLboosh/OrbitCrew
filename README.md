@@ -216,7 +216,7 @@ finish. Worth checking specifically:
 
 - Picking **Legs** shows leg exercises, not the whole library.
 - Two categories combine: Chest + Arms, or Chest + Triceps via "individual muscle
-  groups". Full Body and Custom replace the selection rather than adding to it.
+  groups". Full Body replaces the selection rather than adding to it.
 - **+ Add set** copies the previous set's numbers, and the values are edited in
   place rather than through a separate form. Edits save on blur.
 - **+ Add custom exercise** saves to your account — it is still there in the next

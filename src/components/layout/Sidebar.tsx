@@ -9,7 +9,7 @@ import { useTheme } from '@/theme';
 interface NavItem {
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
-  route: '/(tabs)' | '/(tabs)/crew' | '/(tabs)/progress' | '/(tabs)/map';
+  route: '/(tabs)' | '/(tabs)/crew' | '/(tabs)/friends' | '/(tabs)/progress' | '/(tabs)/map';
   /** Path fragment used to decide the active state. */
   match: string;
 }
@@ -17,6 +17,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { label: 'Overview', icon: 'sparkles-outline', route: '/(tabs)', match: 'index' },
   { label: 'Crew', icon: 'people-outline', route: '/(tabs)/crew', match: 'crew' },
+  { label: 'Friends', icon: 'person-add-outline', route: '/(tabs)/friends', match: 'friends' },
   { label: 'Progress', icon: 'stats-chart-outline', route: '/(tabs)/progress', match: 'progress' },
   { label: 'Explore gyms', icon: 'location-outline', route: '/(tabs)/map', match: 'map' },
 ];
@@ -165,7 +166,14 @@ export function Sidebar() {
           },
         ]}
       >
-        {profile ? <Avatar id={profile.id} name={profile.display_name} size={36} /> : null}
+        {profile ? (
+          <Avatar
+            id={profile.id}
+            name={profile.display_name}
+            imageUrl={profile.avatar_url}
+            size={36}
+          />
+        ) : null}
         <View style={{ flex: 1 }}>
           <Text variant="subheading" numberOfLines={1}>
             {profile?.display_name ?? '—'}

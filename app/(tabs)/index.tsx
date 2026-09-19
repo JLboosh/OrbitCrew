@@ -101,11 +101,19 @@ export default function TodayScreen() {
       ) : (
         <Wordmark />
       )}
-      <IconButton
-        icon="person-circle-outline"
-        label="Your profile and privacy settings"
-        onPress={() => router.push('/(tabs)/profile')}
-      />
+      {/* Only on narrow layouts.
+          On wide, the sidebar's pinned account row is the way to Profile, and a
+          second control doing the identical thing on the same screen is just
+          noise. On narrow there is no sidebar and the profile tab is registered
+          with `href: null`, so removing this everywhere would leave the profile
+          route unreachable on a phone. */}
+      {theme.isWide ? null : (
+        <IconButton
+          icon="person-circle-outline"
+          label="Your profile and privacy settings"
+          onPress={() => router.push('/(tabs)/profile')}
+        />
+      )}
     </View>
   );
 
@@ -278,7 +286,12 @@ export default function TodayScreen() {
                 <Text variant="caption" tone="subtle">
                   {String(index + 1).padStart(2, '0')}
                 </Text>
-                <Avatar id={row.user_id} name={row.display_name} size={34} />
+                <Avatar
+                  id={row.user_id}
+                  name={row.display_name}
+                  imageUrl={row.avatar_url}
+                  size={34}
+                />
               </View>
             }
           />

@@ -4,13 +4,29 @@ import { View } from 'react-native';
 import {
   useMyPrivacySettings,
   useMyProfile,
+  useRemoveAvatar,
   useUpdatePrivacySettings,
   useUpdateProfile,
+  useUploadAvatar,
   type PresenceVisibility,
 } from '@/api';
 import { useAuth } from '@/auth/AuthProvider';
-import { Button, Card, Screen, SettingSwitch, Text, useConfirm } from '@/components/ui';
+import {
+  Avatar,
+  Button,
+  Card,
+  Screen,
+  SettingSwitch,
+  Text,
+  TextField,
+  useConfirm,
+} from '@/components/ui';
+import { errorMessage } from '@/lib/errors';
+import { imagePicker } from '@/lib/imagePicker';
 import { useAppearance, useTheme, type ThemeMode } from '@/theme';
+
+/** Matches `profiles_display_name_length`, so the form rejects before the database. */
+const MAX_DISPLAY_NAME = 50;
 
 /**
  * Profile and privacy.
@@ -44,17 +60,7 @@ export default function ProfileScreen() {
 
   return (
     <Screen title="Profile" subtitle="You control everything below.">
-      <Card>
-        <Text variant="heading" heading>
-          {profile?.display_name ?? '—'}
-        </Text>
-        <Text variant="caption" tone="muted">
-          @{profile?.username ?? '—'}
-        </Text>
-        <Text variant="caption" tone="subtle">
-          Times are shown in {profile?.timezone ?? 'UTC'}
-        </Text>
-      </Card>
+      <IdentityCard />
 
       {/* ---------------------------------------------------------------- */}
       <Card>
@@ -211,6 +217,173 @@ export default function ProfileScreen() {
         }}
       />
     </Screen>
+  );
+}
+
+/**
+ * Name and picture — the two things a member should obviously be able to change,
+ * and previously could not: this card was read-only text.
+ *
+ * NICKNAME, NOT USERNAME. `display_name` is what appears everywhere in the app and
+ * is free to change. `username` is the handle friends search for, is `citext`
+ * UNIQUE with a strict format, and changing it would silently break anyone who had
+ * saved it — so it is shown here to be copied, not edited.
+ */
+function IdentityCard() {
+  const theme = useTheme();
+  const { data: profile } = useMyProfile();
+  const updateProfile = useUpdateProfile();
+  const uploadAvatar = useUploadAvatar();
+  const removeAvatar = useRemoveAvatar();
+
+  // Undefined means "not being edited", which is different from an empty string.
+  // Seeding from the profile on every render would fight the member's typing.
+  const [draftName, setDraftName] = useState<string | undefined>(undefined);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [pictureError, setPictureError] = useState<string | null>(null);
+
+  const savedName = profile?.display_name ?? '';
+  const name = draftName ?? savedName;
+  const trimmed = name.trim();
+  const changed = trimmed !== savedName;
+  const valid = trimmed.length >= 1 && trimmed.length <= MAX_DISPLAY_NAME;
+
+  const saveName = () => {
+    if (!changed || !valid) return;
+    setNameError(null);
+    updateProfile.mutate(
+      { display_name: trimmed },
+      {
+        onSuccess: () => setDraftName(undefined),
+        onError: (err) => setNameError(errorMessage(err, 'Could not save your name.')),
+      },
+    );
+  };
+
+  const changePicture = async () => {
+    setPictureError(null);
+    try {
+      const picked = await imagePicker.pick();
+      // Null means the member closed the file dialog, which is not an error.
+      if (!picked) return;
+      await uploadAvatar.mutateAsync(picked);
+    } catch (err) {
+      setPictureError(errorMessage(err, 'Could not upload that picture.'));
+    }
+  };
+
+  const clearPicture = async () => {
+    setPictureError(null);
+    try {
+      await removeAvatar.mutateAsync();
+    } catch (err) {
+      setPictureError(errorMessage(err, 'Could not remove your picture.'));
+    }
+  };
+
+  const busy = uploadAvatar.isPending || removeAvatar.isPending;
+
+  return (
+    <Card>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.lg }}>
+        {profile ? (
+          <Avatar
+            id={profile.id}
+            name={profile.display_name}
+            imageUrl={profile.avatar_url}
+            size={72}
+          />
+        ) : null}
+
+        <View style={{ flex: 1, gap: theme.spacing.xs }}>
+          <Text variant="caption" tone="muted">
+            @{profile?.username ?? '—'}
+          </Text>
+          <Text variant="caption" tone="subtle">
+            This is the handle friends search for.
+          </Text>
+        </View>
+      </View>
+
+      {/* Picture controls. */}
+      <View style={{ flexDirection: 'row', gap: theme.spacing.sm, flexWrap: 'wrap' }}>
+        <Button
+          label={profile?.avatar_url ? 'Change picture' : 'Add a picture'}
+          variant="secondary"
+          icon="image-outline"
+          loading={uploadAvatar.isPending}
+          disabled={!imagePicker.supported || busy}
+          onPress={() => void changePicture()}
+        />
+        {profile?.avatar_url ? (
+          <Button
+            label="Remove"
+            variant="ghost"
+            loading={removeAvatar.isPending}
+            disabled={busy}
+            onPress={() => void clearPicture()}
+          />
+        ) : null}
+      </View>
+
+      {imagePicker.supported ? (
+        <Text variant="caption" tone="subtle">
+          JPEG, PNG, or WebP, up to 2 MB. Your picture is shown to people who can already see your
+          profile, and it is served from a public link — so treat it as public.
+        </Text>
+      ) : (
+        <Text variant="caption" tone="subtle">
+          {imagePicker.unsupportedReason}
+        </Text>
+      )}
+
+      {pictureError ? (
+        <Text variant="caption" tone="danger" accessibilityLiveRegion="polite">
+          {pictureError}
+        </Text>
+      ) : null}
+
+      {/* Nickname. */}
+      <View style={{ gap: theme.spacing.sm, marginTop: theme.spacing.sm }}>
+        <TextField
+          label="Nickname"
+          hint="What your crew sees. Change it whenever you like."
+          value={name}
+          onChangeText={(next) => {
+            setDraftName(next);
+            setNameError(null);
+          }}
+          maxLength={MAX_DISPLAY_NAME}
+          autoCapitalize="words"
+          error={nameError}
+          onSubmitEditing={saveName}
+          returnKeyType="done"
+        />
+
+        {changed ? (
+          <View style={{ flexDirection: 'row', gap: theme.spacing.sm, flexWrap: 'wrap' }}>
+            <Button
+              label="Save"
+              loading={updateProfile.isPending}
+              disabled={!valid}
+              onPress={saveName}
+            />
+            <Button
+              label="Cancel"
+              variant="ghost"
+              onPress={() => {
+                setDraftName(undefined);
+                setNameError(null);
+              }}
+            />
+          </View>
+        ) : null}
+      </View>
+
+      <Text variant="caption" tone="subtle">
+        Times are shown in {profile?.timezone ?? 'UTC'}
+      </Text>
+    </Card>
   );
 }
 

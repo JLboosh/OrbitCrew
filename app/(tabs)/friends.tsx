@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import {
+  normaliseUsernameQuery,
   useAcceptFriendRequest,
   useFindProfileByUsername,
   useFriendRequests,
@@ -25,8 +26,14 @@ import {
 import { errorMessage } from '@/lib/errors';
 import { useTheme } from '@/theme';
 
-/** `find_profile_by_username` ignores anything shorter, so the UI says so too. */
-const MIN_USERNAME_LENGTH = 3;
+/**
+ * Handles are 3-24 characters (`profiles_username_format`), but the search accepts
+ * anything non-empty and reports no match rather than refusing to look. Telling
+ * someone their query is too short is unhelpful when they are simply working from
+ * the wrong handle — which is the common case, because handles are generated at
+ * signup and are not the name the member typed.
+ */
+const USERNAME_MIN_LENGTH = 3;
 
 /**
  * Friends: find people, send and answer requests, see who you are connected to.
@@ -61,9 +68,10 @@ export default function FriendsScreen() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
 
-  const trimmed = query.trim();
-  const longEnough = trimmed.length >= MIN_USERNAME_LENGTH;
-  const search = useFindProfileByUsername(trimmed, longEnough);
+  // Strips a pasted "@", so "@sam" finds sam.
+  const trimmed = normaliseUsernameQuery(query);
+  const searching = trimmed.length > 0;
+  const search = useFindProfileByUsername(trimmed, searching);
 
   const incoming = requests?.incoming ?? [];
   const outgoing = requests?.outgoing ?? [];
@@ -119,7 +127,7 @@ export default function FriendsScreen() {
 
         <TextField
           label="Username"
-          hint="Type someone's exact username. Nobody can be found by browsing, so ask them for their handle."
+          hint="Their exact handle, not their name. It is on their Profile screen, under their picture."
           value={query}
           onChangeText={(next) => {
             setQuery(next);
@@ -131,13 +139,7 @@ export default function FriendsScreen() {
           placeholder="alex"
         />
 
-        {!longEnough ? (
-          trimmed.length > 0 ? (
-            <Text variant="caption" tone="subtle">
-              Keep going — usernames are at least {MIN_USERNAME_LENGTH} characters.
-            </Text>
-          ) : null
-        ) : search.isLoading ? (
+        {!searching ? null : search.isLoading ? (
           <Text variant="caption" tone="muted">
             Looking…
           </Text>
@@ -175,10 +177,16 @@ export default function FriendsScreen() {
           /* An opted-out member is indistinguishable from a wrong handle, and
              deliberately so: saying "this person exists but is not findable"
              would leak exactly what the setting exists to hide. */
-          <Text variant="caption" tone="muted">
-            No match for “{trimmed}”. Check the spelling — and note people can turn off being
-            findable, in which case they will need to add you instead.
-          </Text>
+          <View style={{ gap: theme.spacing.xs }}>
+            <Text variant="caption" tone="muted">
+              No match for “{trimmed}”.
+            </Text>
+            <Text variant="caption" tone="subtle">
+              {trimmed.length < USERNAME_MIN_LENGTH
+                ? `Handles are at least ${USERNAME_MIN_LENGTH} characters, so this is not one. Ask them to open Profile and read the handle under their picture — signup generates it, so it is often not the name they chose.`
+                : 'Handles are generated at signup, so it is often not the name they chose. Ask them to check Profile — and note anyone can turn off being findable, in which case they will need to add you instead.'}
+            </Text>
+          </View>
         )}
 
         {actionError ? (

@@ -13,18 +13,38 @@ export default function SignUpScreen() {
   const { signUp } = useAuth();
 
   const [displayName, setDisplayName] = useState('');
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const canSubmit = email.trim().length > 3 && password.length >= 6 && !submitting;
+  // Accept a pasted "@handle" rather than rejecting it.
+  const handle = username.trim().replace(/^@+/, '');
+
+  /**
+   * Checked before submitting, because the trigger does NOT reject a bad handle —
+   * it quietly repairs one. A seed under three characters gets `lifter` prefixed, so
+   * asking for "j" and being given "lifterj" would look like the app ignored you.
+   */
+  const handleValid = handle.length === 0 || /^[A-Za-z0-9_]{3,24}$/.test(handle);
+  const handleError =
+    handle.length === 0 || handleValid
+      ? null
+      : 'Handles are 3-24 characters: letters, numbers, or underscores.';
+
+  const canSubmit = email.trim().length > 3 && password.length >= 6 && handleValid && !submitting;
 
   async function handleSubmit() {
     setError(null);
     setSubmitting(true);
     try {
-      const { needsEmailConfirmation } = await signUp({ email, password, displayName });
+      const { needsEmailConfirmation } = await signUp({
+        email,
+        password,
+        displayName,
+        username: handle || undefined,
+      });
 
       /**
        * Move to sign-in rather than sitting here.
@@ -80,6 +100,36 @@ export default function SignUpScreen() {
               placeholderTextColor={theme.colors.textSubtle}
               style={inputStyle}
             />
+          </View>
+
+          {/*
+            Asked for HERE rather than generated silently.
+            The handle is the only way anyone can find you — the friend search is
+            exact-match by design — so a handle nobody chose and nobody can guess
+            made that search unusable. Left optional: one more required field on a
+            signup form costs more than it gains, and the generator still produces a
+            working handle. It can be changed later in Profile either way.
+          */}
+          <View style={{ gap: theme.spacing.xs }}>
+            <Text variant="caption" tone="muted">
+              Handle (optional)
+            </Text>
+            <TextInput
+              value={username}
+              onChangeText={setUsername}
+              accessibilityLabel="Username or handle"
+              accessibilityHint="How friends find you. Letters, numbers, and underscores."
+              autoCapitalize="none"
+              autoCorrect={false}
+              maxLength={24}
+              placeholder="how friends find you, e.g. alexr"
+              placeholderTextColor={theme.colors.textSubtle}
+              style={inputStyle}
+            />
+            <Text variant="caption" tone="subtle">
+              {handleError ??
+                '3-24 letters, numbers, or underscores. Leave it blank and we will make one from your email.'}
+            </Text>
           </View>
 
           <View style={{ gap: theme.spacing.xs }}>

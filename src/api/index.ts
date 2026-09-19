@@ -92,6 +92,7 @@ export {
   useCrew,
   useCrewInvites,
   useCrewMembers,
+  normaliseUsernameQuery,
   useFindProfileByUsername,
   useFriendRequests,
   useFriends,

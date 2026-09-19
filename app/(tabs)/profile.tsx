@@ -29,6 +29,17 @@ import { useAppearance, useTheme, type ThemeMode } from '@/theme';
 const MAX_DISPLAY_NAME = 50;
 
 /**
+ * Mirrors `profiles_username_format` exactly.
+ *
+ * Kept in step deliberately: validating client-side means a rejection is explained
+ * in plain language instead of arriving as a constraint-violation code, but the
+ * database is still what guarantees it.
+ */
+const USERNAME_MIN = 3;
+const USERNAME_MAX = 24;
+const USERNAME_PATTERN = /^[A-Za-z0-9_]{3,24}$/;
+
+/**
  * Profile and privacy.
  *
  * The controls here are the product's central promise, so every one states its
@@ -296,11 +307,9 @@ function IdentityCard() {
         ) : null}
 
         <View style={{ flex: 1, gap: theme.spacing.xs }}>
-          <Text variant="caption" tone="muted">
-            @{profile?.username ?? '—'}
-          </Text>
+          <Text variant="subheading">@{profile?.username ?? '—'}</Text>
           <Text variant="caption" tone="subtle">
-            This is the handle friends search for.
+            This is the handle friends search for. Share it exactly as written.
           </Text>
         </View>
       </View>
@@ -380,10 +389,141 @@ function IdentityCard() {
         ) : null}
       </View>
 
+      <UsernameEditor />
+
       <Text variant="caption" tone="subtle">
         Times are shown in {profile?.timezone ?? 'UTC'}
       </Text>
     </Card>
+  );
+}
+
+/**
+ * Changing your handle.
+ *
+ * WHY THIS NEEDED TO EXIST. The handle is GENERATED at signup — from the email
+ * local part, padded to the 3-character minimum, so `j@example.com` becomes
+ * `lifterj`. The signup form never asked for one and nothing could change it
+ * afterwards, so members ended up with a handle they did not choose, could not
+ * guess, and could not share. Since an exact handle is the only way to find anyone
+ * (by design — a prefix search would let a client enumerate every account), an
+ * unchangeable generated handle made the friend search effectively unusable.
+ *
+ * Collapsed by default: most people never touch it, and a rename is not something
+ * to fall into by accident.
+ */
+function UsernameEditor() {
+  const theme = useTheme();
+  const { data: profile } = useMyProfile();
+  const updateProfile = useUpdateProfile();
+
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  const current = profile?.username ?? '';
+  const value = draft ?? current;
+  // Typing "@sam" is the natural thing to do; accept it and strip it.
+  const handle = value.trim().replace(/^@+/, '');
+
+  const changed = handle.toLowerCase() !== current.toLowerCase();
+  const wellFormed = USERNAME_PATTERN.test(handle);
+
+  const save = () => {
+    setError(null);
+    setSaved(false);
+
+    if (!wellFormed) {
+      setError(
+        `Handles are ${USERNAME_MIN}-${USERNAME_MAX} characters, using letters, numbers, or underscores.`,
+      );
+      return;
+    }
+
+    updateProfile.mutate(
+      { username: handle },
+      {
+        onSuccess: () => {
+          setDraft(undefined);
+          setOpen(false);
+          setSaved(true);
+        },
+        onError: (err) => {
+          // The unique index on a citext column is what makes two Sams
+          // impossible; its raw message is not worth showing anyone.
+          const code = (err as { code?: string }).code;
+          setError(
+            code === '23505'
+              ? `@${handle} is already taken. Try another.`
+              : errorMessage(err, 'Could not change your handle.'),
+          );
+        },
+      },
+    );
+  };
+
+  if (!open) {
+    return (
+      <View style={{ gap: theme.spacing.xs }}>
+        <Button
+          label="Change handle"
+          variant="ghost"
+          onPress={() => {
+            setOpen(true);
+            setSaved(false);
+          }}
+        />
+        {saved ? (
+          <Text variant="caption" tone="success" accessibilityLiveRegion="polite">
+            Handle updated. Share @{current} with friends.
+          </Text>
+        ) : null}
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ gap: theme.spacing.sm }}>
+      <TextField
+        label="Handle"
+        hint={`${USERNAME_MIN}-${USERNAME_MAX} characters: letters, numbers, or underscores.`}
+        value={value}
+        onChangeText={(next) => {
+          setDraft(next);
+          setError(null);
+        }}
+        autoCapitalize="none"
+        autoCorrect={false}
+        maxLength={USERNAME_MAX + 1}
+        error={error}
+        onSubmitEditing={save}
+        returnKeyType="done"
+      />
+
+      <Text variant="caption" tone="subtle">
+        Anyone searching your old handle will not find you afterwards, so tell the people who have
+        it.
+      </Text>
+
+      <View style={{ flexDirection: 'row', gap: theme.spacing.sm, flexWrap: 'wrap' }}>
+        <Button
+          label="Save handle"
+          loading={updateProfile.isPending}
+          disabled={!changed || !wellFormed}
+          onPress={save}
+        />
+        <Button
+          label="Cancel"
+          variant="ghost"
+          onPress={() => {
+            setDraft(undefined);
+            setError(null);
+            setOpen(false);
+          }}
+        />
+      </View>
+    </View>
   );
 }
 

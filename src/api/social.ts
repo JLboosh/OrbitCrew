@@ -116,17 +116,41 @@ export function useFriendRequests() {
  * exact-match: a prefix search would let a client enumerate the user base.
  */
 export function useFindProfileByUsername(username: string, enabled = true) {
+  const handle = normaliseUsernameQuery(username);
+
   return useQuery({
-    queryKey: ['profile-search', username],
-    enabled: enabled && username.trim().length >= 3,
+    queryKey: ['profile-search', handle],
+    /**
+     * Any non-empty handle is searched.
+     *
+     * This used to require three characters, mirroring the `profiles_username_format`
+     * minimum — the reasoning being that a shorter query could not possibly match.
+     * True, but it made the UI refuse to search and tell the member their input was
+     * too short, which reads as "you are holding it wrong" to someone who believes
+     * their friend's handle really is that short. Running the query and honestly
+     * reporting no match is clearer, and costs one indexed equality lookup.
+     */
+    enabled: enabled && handle.length > 0,
     queryFn: async () => {
       const { data, error } = await supabase.rpc('find_profile_by_username', {
-        p_username: username.trim(),
+        p_username: handle,
       });
       if (error) throw error;
       return data?.[0] ?? null;
     },
   });
+}
+
+/**
+ * Tidies a typed or pasted handle.
+ *
+ * People write and share handles as "@sam", so a leading @ is stripped rather than
+ * sent to a lookup that would never match it. Case and surrounding whitespace are
+ * already handled by the function itself (`lower(trim(...))`), but trimming here
+ * keeps the query key stable so "sam" and "sam " are one cache entry.
+ */
+export function normaliseUsernameQuery(value: string): string {
+  return value.trim().replace(/^@+/, '').trim();
 }
 
 export function useSendFriendRequest() {

@@ -1,0 +1,99 @@
+name: Deploy web
+
+# Publishes the web build to GitHub Pages, which is free for a public repository.
+#
+# COST: nothing. GitHub Actions minutes are free and unlimited on public repos, and
+# Pages hosting is free. The only paid path anywhere near this project is the app
+# stores (Apple $99/year, Google $25 once), which this workflow does not touch.
+#
+# ON A PRIVATE REPO, Pages requires GitHub Pro. The `dist/` artefact this uploads
+# works unchanged on Cloudflare Pages or Netlify, both of which are free for
+# private repos — see README.
+#
+# BEFORE THE FIRST RUN, two things are needed and neither can be done from here:
+#
+#   1. Settings -> Pages -> Build and deployment -> Source: "GitHub Actions".
+#   2. Settings -> Secrets and variables -> Actions -> add
+#      SUPABASE_URL and SUPABASE_ANON_KEY.
+#
+# The anon key is safe in a repo secret AND safe inlined into the bundle: it grants
+# no authority on its own, and row-level security is what protects member data. A
+# service_role key must never appear here — it bypasses RLS entirely.
+
+on:
+  push:
+    branches: [main]
+  # Kept manual as well, so a deploy can be re-run without an empty commit.
+  workflow_dispatch:
+
+# Pages needs these; `contents: read` is the default and is narrowed deliberately.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time. `cancel-in-progress: false` because cancelling half way
+# through publishing can leave Pages serving a partial build.
+concurrency:
+  group: deploy-web
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build web bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Deploying a build that does not typecheck or pass its tests is how a broken
+      # site reaches a tester. The same checks CI runs, before anything is published.
+      - name: Verify
+        run: npm run verify
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+
+      - name: Fail early if Supabase secrets are missing
+        # Without this the build succeeds and publishes a site that cannot sign
+        # anyone in, with no indication why.
+        run: |
+          if [ -z "${{ secrets.SUPABASE_URL }}" ] || [ -z "${{ secrets.SUPABASE_ANON_KEY }}" ]; then
+            echo "::error::SUPABASE_URL and SUPABASE_ANON_KEY must be set as Actions secrets."
+            echo "Settings -> Secrets and variables -> Actions. See .github/workflows/deploy-web.yml."
+            exit 1
+          fi
+
+      - name: Build
+        run: npm run build:web
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          # Pages serves a project repo from /<repo>/, so every asset path and the
+          # MapLibre worker URL must carry that prefix. Derived from the repo name
+          # rather than hardcoded, so a rename does not silently break the deploy.
+          EXPO_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    name: Publish to Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

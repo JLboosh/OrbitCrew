@@ -61,8 +61,15 @@ usage policy.
 - **Xcode** (iOS simulator) and/or **Android Studio** (Android emulator)
 - **Docker Desktop** — optional, only needed for the local database loop
 
-> **Expo Go will not work for the map screens.** MapLibre is a native module, so
-> a development build is required. Everything else runs in Expo Go.
+> **Expo Go works for the whole app**, including the map. `maplibre-gl` is a
+> browser library and is imported at runtime only by `GymMapView.web.tsx`;
+> everywhere else it appears as a type-only import, which is erased at compile
+> time. Metro resolves the native map to `GymMapView.tsx`, a schematic plot with no
+> native dependencies, and every remaining dependency ships inside Expo Go.
+>
+> A development build becomes necessary only if `@maplibre/maplibre-react-native`
+> is adopted for a real native map — see the seam documented in
+> `src/components/gyms/GymMapView.tsx`.
 
 ## Setup
 
@@ -144,7 +151,10 @@ npm run db:types:local     # generate types from the local schema
 | Script                                                           | Purpose                                                       |
 | ---------------------------------------------------------------- | ------------------------------------------------------------- |
 | `npm start`                                                      | Expo dev server                                               |
+| `npm run web`                                                    | Dev server in a browser on `localhost:8081`                   |
 | `npm run ios` / `android`                                        | Launch on a simulator/emulator                                |
+| `npm run build:web`                                              | Production web export into `dist/`, ready to deploy           |
+| `npm run serve:web`                                              | Serve `dist/` the way a static host does, to check a build    |
 | `npm run verify`                                                 | **Typecheck + lint + test. Run before every push.**           |
 | `npm run verify:db`                                              | 170 checks against the real database (needs service-role key) |
 | `npm run verify:db:identity` / `:social` / `:gyms` / `:training` | Individual suites                                             |
@@ -197,6 +207,90 @@ docs/HANDOFF.md           lane ownership and database contract
 
 See [docs/HANDOFF.md](docs/HANDOFF.md) for who owns what and the full database
 contract.
+
+## Deploying
+
+Everything below is free. The build is a static single-page app, so any static
+host works.
+
+```bash
+npm run build:web          # export to dist/, then add the host config files
+npm run serve:web          # serve dist/ locally exactly as a host would
+```
+
+`serve:web` is worth using before every deploy: the dev server bundles on demand
+and answers any path with the app, so it cannot reproduce the two failures that
+actually break a static deploy — a missing SPA fallback, and asset paths that are
+wrong for a sub-path host.
+
+### GitHub Pages (free, already wired up)
+
+`.github/workflows/deploy-web.yml` builds and publishes on every push to `main`.
+Two one-time steps, neither of which can be done from the repo:
+
+1. **Settings → Pages → Source: GitHub Actions.**
+2. **Settings → Secrets and variables → Actions**, add `SUPABASE_URL` and
+   `SUPABASE_ANON_KEY`.
+
+It then serves at `https://<user>.github.io/<repo>/`. The workflow sets
+`EXPO_PUBLIC_BASE_PATH` from the repo name automatically, because Pages serves a
+project repo from a sub-path and every absolute asset path — plus the MapLibre
+worker URL — has to carry that prefix.
+
+> **Pages is only free on a public repo.** On a private one it needs GitHub Pro.
+> The `dist/` output is host-agnostic, so use Cloudflare Pages or Netlify instead
+> (both free for private repos, both serve at the root, so leave
+> `EXPO_PUBLIC_BASE_PATH` unset).
+
+### Any other static host
+
+`npm run build:web` writes the config each one looks for, so switching host is not
+a code change:
+
+| Host                      | Uses                     | Base path    |
+| ------------------------- | ------------------------ | ------------ |
+| GitHub Pages              | `404.html` + `.nojekyll` | `/<repo>`    |
+| Netlify, Cloudflare Pages | `_redirects`             | unset (root) |
+| Vercel                    | `vercel.json`            | unset (root) |
+
+Point the host at `dist/`, set the two `EXPO_PUBLIC_SUPABASE_*` variables in its
+build settings, and use `npm run build:web` as the build command.
+
+### Is the anon key safe in the bundle?
+
+Yes, and it has to be there — `EXPO_PUBLIC_*` values are inlined at build time.
+The anon key grants no authority by itself; row-level security is what protects
+member data. A `service_role` key must never be used here, in a repo secret, or in
+a host's build settings: it bypasses RLS completely.
+
+### What this costs
+
+|                                                        |                                                           |
+| ------------------------------------------------------ | --------------------------------------------------------- |
+| Static hosting (Pages / Cloudflare / Netlify / Vercel) | **Free**                                                  |
+| GitHub Actions on a public repo                        | **Free**, unlimited                                       |
+| Supabase                                               | **Free tier** — 500 MB database, 50k monthly active users |
+| OpenFreeMap tiles and fonts                            | **Free**, no key, no request cap                          |
+| OpenStreetMap gym data                                 | **Free**, ODbL, attribution required (already rendered)   |
+
+**What is not free:** native app store distribution. Apple charges $99/year and
+Google $25 once, and no amount of configuration avoids that. EAS Build has a free
+tier but it only produces the binary — it does not cover the store accounts.
+
+For putting the app on a phone for free, use **Expo Go**:
+
+```bash
+npx expo start --tunnel    # scan the QR code with Expo Go
+```
+
+The README previously said Expo Go would not work because of MapLibre. That is no
+longer true: MapLibre is only imported by `GymMapView.web.tsx`, and Metro resolves
+the native map to `GymMapView.tsx`, a schematic plot with no native dependencies.
+Every remaining dependency ships inside Expo Go.
+
+> **Supabase free projects pause after about a week of inactivity** and need a
+> click in the dashboard to wake. Worth knowing before concluding a deploy is
+> broken.
 
 ## What to test
 

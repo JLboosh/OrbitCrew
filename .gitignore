@@ -37,6 +37,9 @@ yarn-error.*
 .env.*
 !.env.example
 
+# Local scratch logs from build/verify runs.
+*.log
+
 # Supabase local stack
 supabase/.branches/
 supabase/.temp/

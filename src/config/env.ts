@@ -28,7 +28,34 @@ const envSchema = z.object({
     .url('EXPO_PUBLIC_SUPABASE_URL must be a valid URL, e.g. http://127.0.0.1:54321'),
 
   EXPO_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1, 'EXPO_PUBLIC_SUPABASE_ANON_KEY is required'),
+
+  /**
+   * Sub-path the web build is served from, for hosts that do not serve at the
+   * domain root. Optional, and empty for every other target.
+   *
+   * GitHub Pages for a project repo serves at `https://<user>.github.io/<repo>/`,
+   * so every absolute asset path the export emits (`/_expo/...`, `/favicon.ico`,
+   * and the MapLibre worker) 404s without this. Netlify, Cloudflare Pages, Vercel,
+   * and a local server all serve at the root and need it left unset.
+   */
+  EXPO_PUBLIC_BASE_PATH: z.string().optional(),
 });
+
+/**
+ * Normalises a base path to either `''` or `/segment`, with no trailing slash.
+ *
+ * Accepts what a person would plausibly type — `gymCrew-app`, `/gymCrew-app`,
+ * `/gymCrew-app/`, or `/` — because this value is set by hand in a CI secret or a
+ * shell, and a stray slash producing `//_expo/...` is a broken deploy that builds
+ * perfectly well.
+ */
+export function normaliseBasePath(value: string | undefined): string {
+  const trimmed = (value ?? '').trim();
+  if (trimmed === '' || trimmed === '/') return '';
+
+  const withLeading = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  return withLeading.endsWith('/') ? withLeading.slice(0, -1) : withLeading;
+}
 
 /**
  * Shape of an environment source. Deliberately looser than
@@ -47,6 +74,7 @@ export function parseEnv(source: EnvSource = process.env as EnvSource) {
   const result = envSchema.safeParse({
     EXPO_PUBLIC_SUPABASE_URL: source.EXPO_PUBLIC_SUPABASE_URL,
     EXPO_PUBLIC_SUPABASE_ANON_KEY: source.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+    EXPO_PUBLIC_BASE_PATH: source.EXPO_PUBLIC_BASE_PATH,
   });
 
   if (!result.success) {
@@ -64,6 +92,7 @@ export function parseEnv(source: EnvSource = process.env as EnvSource) {
   return {
     supabaseUrl: result.data.EXPO_PUBLIC_SUPABASE_URL,
     supabaseAnonKey: result.data.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+    basePath: normaliseBasePath(result.data.EXPO_PUBLIC_BASE_PATH),
   };
 }
 
@@ -78,4 +107,5 @@ export type Env = ReturnType<typeof parseEnv>;
 export const env: Env = parseEnv({
   EXPO_PUBLIC_SUPABASE_URL: process.env.EXPO_PUBLIC_SUPABASE_URL,
   EXPO_PUBLIC_SUPABASE_ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+  EXPO_PUBLIC_BASE_PATH: process.env.EXPO_PUBLIC_BASE_PATH,
 });

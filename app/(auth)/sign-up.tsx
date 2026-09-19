@@ -5,6 +5,7 @@ import { TextInput, View } from 'react-native';
 import { useAuth } from '@/auth/AuthProvider';
 import { Button, Card, Screen, Text } from '@/components/ui';
 import { BRANDING } from '@/constants/branding';
+import { errorMessage } from '@/lib/errors';
 import { useTheme } from '@/theme';
 
 export default function SignUpScreen() {
@@ -66,7 +67,7 @@ export default function SignUpScreen() {
       // Confirmation disabled: a session already exists and the root layout is
       // about to route into the app, so there is nothing to say.
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create your account.');
+      setError(errorMessage(err, 'Could not create your account.'));
     } finally {
       setSubmitting(false);
     }

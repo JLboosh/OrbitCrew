@@ -5,6 +5,7 @@ import { TextInput, View } from 'react-native';
 import { useAuth } from '@/auth/AuthProvider';
 import { Button, Card, Screen, Text } from '@/components/ui';
 import { BRANDING } from '@/constants/branding';
+import { errorMessage } from '@/lib/errors';
 import { useTheme } from '@/theme';
 
 export default function SignInScreen() {
@@ -34,7 +35,10 @@ export default function SignInScreen() {
       await signIn(email, password);
       // Routing is handled centrally by the root layout once the session lands.
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not sign in.');
+      // Through `errorMessage` rather than `err.message`: an unreachable server
+      // reports "Failed to fetch", which on this screen is indistinguishable from
+      // a wrong password and sends people into retyping a correct one.
+      setError(errorMessage(err, 'Could not sign in.'));
     } finally {
       setSubmitting(false);
     }

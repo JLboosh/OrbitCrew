@@ -11,6 +11,7 @@ import {
   useRedeemCrewInvite,
 } from '@/api';
 import { Button, Card, ProgressBar, Screen, Text } from '@/components/ui';
+import { errorMessage } from '@/lib/errors';
 import { useTheme } from '@/theme';
 
 /**
@@ -190,7 +191,7 @@ function AdminPanel({ crewId }: { crewId: string }) {
             const invite = await createInvite.mutateAsync({ crewId, expiresInHours: 168 });
             setCode(invite.code);
           } catch (err) {
-            setError(err instanceof Error ? err.message : 'Could not create an invite.');
+            setError(errorMessage(err, 'Could not create an invite.'));
           }
         }}
       />
@@ -243,7 +244,7 @@ function JoinCrewForm() {
             await redeem.mutateAsync(code);
             setCode('');
           } catch (err) {
-            setError(err instanceof Error ? err.message : 'Could not join.');
+            setError(errorMessage(err, 'Could not join. Check the code and try again.'));
           }
         }}
       />
@@ -334,7 +335,7 @@ function NoCrewState() {
                 });
                 setName('');
               } catch (err) {
-                setError(err instanceof Error ? err.message : 'Could not create the crew.');
+                setError(errorMessage(err, 'Could not create the crew.'));
               }
             }}
           />

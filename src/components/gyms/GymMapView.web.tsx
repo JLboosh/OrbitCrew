@@ -10,6 +10,7 @@ import type { GymMapViewProps } from './GymMapView.types';
 
 import type { GymPresenceMember, NearbyGym } from '@/api';
 import { Text } from '@/components/ui';
+import { env } from '@/config/env';
 import {
   CAMPUS_BUILDINGS,
   CAMPUS_CENTRE,
@@ -85,7 +86,16 @@ const PIN_SIZE_SELECTED = 38;
  * Called at module scope: it is a one-line config write, and it must happen before
  * any Map is constructed.
  */
-setWorkerUrl('/maplibre/maplibre-gl-worker.js');
+/*
+ * PREFIXED WITH THE BASE PATH, which matters for a sub-path deploy.
+ *
+ * `experiments.baseUrl` rewrites the asset URLs Expo itself emits, but this string
+ * is ours, so nothing rewrites it. On GitHub Pages — served from `/<repo>/` — a
+ * hardcoded `/maplibre/...` resolves to the domain root, 404s, and reproduces
+ * exactly the blank-canvas failure this call exists to prevent: no tile is ever
+ * parsed, `load` never fires, and nothing appears in the console.
+ */
+setWorkerUrl(`${env.basePath}/maplibre/maplibre-gl-worker.js`);
 
 export function GymMapView({
   origin,

@@ -65,7 +65,7 @@ export default function ProfileScreen() {
   function set(patch: Parameters<typeof updatePrivacy.mutate>[0]) {
     setError(null);
     updatePrivacy.mutate(patch, {
-      onError: (err) => setError(err instanceof Error ? err.message : 'Could not save.'),
+      onError: (err) => setError(errorMessage(err, 'Could not save that setting.')),
     });
   }
 

@@ -1,6 +1,11 @@
 # Orbit Crew — train together, get stronger together
 
 Orbit Crew is a social fitness app for people who want the accountability and community of Strava, built around gym sessions instead of runs.
+<p float="left">
+  <img width="1710" height="948" alt="Screenshot 2026-09-20 at 4 44 37 PM" src="https://github.com/user-attachments/assets/79d231ca-63f3-40f2-a51f-9eefd935dfd1" />
+  <img width="1710" height="948" alt="Screenshot 2026-09-20 at 4 47 06 PM" src="https://github.com/user-attachments/assets/64b351db-570a-4114-9399-98de960bdb12" />
+
+</p>
 
 ## Inspiration
 

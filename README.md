@@ -7,6 +7,21 @@ Orbit Crew is a social fitness app for people who want the accountability and co
 
 </p>
 
+## Run the app locally
+
+Prerequisites: Node.js, npm, and the [Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started) for the local backend. For mobile development, also install Expo Go on a device or have an iOS Simulator / Android emulator available.
+
+```bash
+npm install
+cp .env.example .env
+npm run db:start
+npm start
+```
+
+`npm run db:start` prints the local API URL and anon key. Copy those values into `.env` if they differ from the example defaults. When testing on a physical phone, set `EXPO_PUBLIC_SUPABASE_URL` to your computer's LAN IP instead of `127.0.0.1` so the device can reach Supabase.
+
+Once Expo starts, scan its QR code with Expo Go, or press `i` for iOS, `a` for Android, or `w` for the web app. You can also start a platform directly with `npm run ios`, `npm run android`, or `npm run web`.
+
 ## Inspiration
 
 Going to the gym is easier when your friends are doing it too. Orbit Crew was created to make fitness more social, motivating, and consistent: track your own progress, see when friends are training, work toward shared crew goals, and celebrate improvements together.

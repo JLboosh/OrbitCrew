@@ -70,6 +70,41 @@ writeFileSync(
 // ---------------------------------------------------------------------------
 const basePath = (process.env.EXPO_PUBLIC_BASE_PATH ?? '').trim().replace(/\/$/, '');
 const html = readFileSync(indexPath, 'utf8');
+const branding = JSON.parse(readFileSync(new URL('../branding.json', import.meta.url), 'utf8'));
+
+const baseUrl =
+  basePath === '' || basePath === '/' ? '' : basePath.startsWith('/') ? basePath : `/${basePath}`;
+const manifestPath = join(DIST, 'manifest.webmanifest');
+const manifest = {
+  name: branding.displayName,
+  short_name: branding.displayName,
+  description: branding.tagline,
+  start_url: `${baseUrl}/`,
+  scope: `${baseUrl}/`,
+  display: 'standalone',
+  background_color: '#E6F4FE',
+  theme_color: '#E6F4FE',
+  icons: [
+    { src: `${baseUrl}/pwa-icon-192.png`, sizes: '192x192', type: 'image/png', purpose: 'any' },
+    { src: `${baseUrl}/pwa-icon-512.png`, sizes: '512x512', type: 'image/png', purpose: 'any' },
+  ],
+};
+
+writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+const pwaTags = [
+  `<link rel="manifest" href="${baseUrl}/manifest.webmanifest">`,
+  `<link rel="apple-touch-icon" href="${baseUrl}/pwa-icon-192.png">`,
+  '<meta name="mobile-web-app-capable" content="yes">',
+  '<meta name="apple-mobile-web-app-capable" content="yes">',
+  '<meta name="apple-mobile-web-app-status-bar-style" content="default">',
+  '<meta name="theme-color" content="#E6F4FE">',
+].join('');
+
+if (!html.includes('rel="manifest"')) {
+  writeFileSync(indexPath, html.replace('</head>', `${pwaTags}</head>`));
+  copyFileSync(indexPath, join(DIST, '404.html'));
+}
 
 const workerPath = join(DIST, 'maplibre', 'maplibre-gl-worker.js');
 if (!existsSync(workerPath)) {
@@ -97,4 +132,6 @@ if (basePath !== '' && basePath !== '/') {
   );
 }
 
-console.log(`prepare-web-deploy: ${DIST}/ ready — 404.html, .nojekyll, _redirects, vercel.json`);
+console.log(
+  `prepare-web-deploy: ${DIST}/ ready — PWA manifest, offline worker, 404.html, .nojekyll, _redirects, vercel.json`,
+);

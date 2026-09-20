@@ -242,6 +242,15 @@ worker URL — has to carry that prefix.
 > (both free for private repos, both serve at the root, so leave
 > `EXPO_PUBLIC_BASE_PATH` unset).
 
+### Install on a phone
+
+The exported site includes a web-app manifest and an offline app shell. Once
+the deploy is live, open its URL on the phone, then choose **Add to Home
+Screen** in Safari (iPhone) or **Install app** / **Add to Home screen** in
+Chrome (Android). The installed app opens without browser controls. It needs a
+network connection for Supabase data; the offline shell only lets the app
+itself open when connectivity drops.
+
 ### Any other static host
 
 `npm run build:web` writes the config each one looks for, so switching host is not

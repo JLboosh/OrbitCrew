@@ -8,6 +8,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from '@/auth/AuthProvider';
 import { ConfirmProvider } from '@/components/ui';
 import { queryClient } from '@/lib/queryClient';
+import { registerServiceWorker } from '@/lib/registerServiceWorker';
 import { ThemeProvider, useTheme } from '@/theme';
 
 /**
@@ -128,6 +129,10 @@ function ThemedStatusBar() {
 }
 
 export default function RootLayout() {
+  useEffect(() => {
+    registerServiceWorker();
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>

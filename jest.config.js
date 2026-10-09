@@ -32,4 +32,8 @@ module.exports = {
   testMatch: ['**/__tests__/**/*.test.ts?(x)', '**/?(*.)+(test).ts?(x)'],
 
   clearMocks: true,
+
+  // The first render in a suite pays the cold transform/module-load cost. On
+  // GitHub's shared runners that alone can exceed Jest's 5s default.
+  testTimeout: 20000,
 };

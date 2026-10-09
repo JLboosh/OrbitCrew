@@ -7,20 +7,14 @@ Orbit Crew is a social fitness app for people who want the accountability and co
 
 </p>
 
-## Run the app locally
+## Try it
 
-Prerequisites: Node.js, npm, and the [Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started) for the local backend. For mobile development, also install Expo Go on a device or have an iOS Simulator / Android emulator available.
+**[orbitcreww.netlify.app](https://orbitcreww.netlify.app)**
 
-```bash
-npm install
-cp .env.example .env
-npm run db:start
-npm start
-```
+Open the link in any browser and create an account. To install it like a native app:
 
-`npm run db:start` prints the local API URL and anon key. Copy those values into `.env` if they differ from the example defaults. When testing on a physical phone, set `EXPO_PUBLIC_SUPABASE_URL` to your computer's LAN IP instead of `127.0.0.1` so the device can reach Supabase.
-
-Once Expo starts, scan its QR code with Expo Go, or press `i` for iOS, `a` for Android, or `w` for the web app. You can also start a platform directly with `npm run ios`, `npm run android`, or `npm run web`.
+- **iPhone:** open it in Safari, tap Share, then **Add to Home Screen**.
+- **Android:** open it in Chrome, open the menu, then **Install app**.
 
 ## Inspiration
 
@@ -62,3 +56,18 @@ Orbit Crew starts with one simple action: check in and train.
 Each completed session contributes to your personal progress and, if you choose, your private crew’s weekly goal. Your crew can see the shared momentum build in real time, join challenges together, compare weekly consistency, and encourage one another to keep going.
 
 Whether you are trying to hit a new bench press PR, train three times a week, find a gym your friends already use, or help your crew reach 50 sessions, Orbit Crew turns individual workouts into a shared habit.
+
+## Run the app locally (development)
+
+Prerequisites: Node.js, npm, and the [Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started) for the local backend. For mobile development, also install Expo Go on a device or have an iOS Simulator / Android emulator available.
+
+```bash
+npm install
+cp .env.example .env
+npm run db:start
+npm start
+```
+
+`npm run db:start` prints the local API URL and anon key. Copy those values into `.env` if they differ from the example defaults. When testing on a physical phone, set `EXPO_PUBLIC_SUPABASE_URL` to your computer's LAN IP instead of `127.0.0.1` so the device can reach Supabase.
+
+Once Expo starts, scan its QR code with Expo Go, or press `i` for iOS, `a` for Android, or `w` for the web app. You can also start a platform directly with `npm run ios`, `npm run android`, or `npm run web`.

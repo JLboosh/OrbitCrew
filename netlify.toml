@@ -1,0 +1,20 @@
+# Netlify build settings. The SPA fallback (`_redirects`) and the PWA manifest
+# are written into dist/ by scripts/prepare-web-deploy.mjs, so none are needed here.
+#
+# EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY must be set in the
+# Netlify UI (Site configuration -> Environment variables). Never the service_role key.
+# EXPO_PUBLIC_BASE_PATH stays unset: Netlify serves from the domain root.
+
+[build]
+  command = "npm run build:web"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "24"
+
+# The service worker must be re-checked on every load, or members keep running
+# an old build after a deploy.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
